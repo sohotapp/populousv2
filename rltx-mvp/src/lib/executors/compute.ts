@@ -706,41 +706,205 @@ export class ComputeExecutor extends BaseExecutor {
 
   private async executeDocParse(ctx: ExecutorContext): Promise<Record<string, unknown>> {
     const { extractTables = true, extractImages = false } = ctx.config;
-    const { file } = ctx.inputs;
+    const { file, dataId } = ctx.inputs;
 
-    ctx.onProgress(20, "Parsing document...");
+    ctx.onProgress(10, "Loading document...");
 
-    // In a real implementation, this would use a document parsing library
-    // For now, return mock extracted content
-    ctx.onProgress(60, "Extracting content...");
+    // Check if we have a dataId (from data library) or raw file content
+    let fileContent: string | Buffer;
+    let fileType: string;
+    let filename: string;
+
+    if (dataId && typeof dataId === "string") {
+      // Fetch from data store
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/data/upload?id=${dataId}`);
+        if (!response.ok) {
+          throw new Error(`Data not found: ${dataId}`);
+        }
+        const data = await response.json();
+        fileContent = data.rawContent || data.content;
+        fileType = data.type;
+        filename = data.filename;
+
+        // If already parsed (CSV, JSON), return the content directly
+        if (fileType === "csv" || fileType === "json") {
+          return {
+            content: {
+              text: typeof fileContent === "string" ? fileContent.slice(0, 1000) : JSON.stringify(data.preview),
+              data: data.content,
+              schema: data.schema,
+              metadata: {
+                filename,
+                type: fileType,
+                rowCount: data.rowCount,
+                extractedAt: new Date().toISOString(),
+              },
+            },
+          };
+        }
+      } catch (error) {
+        throw new ExecutionError(
+          "DATA_LOAD_FAILED",
+          `Failed to load data: ${error instanceof Error ? error.message : "Unknown error"}`,
+          true
+        );
+      }
+    } else if (file && typeof file === "string") {
+      // Raw file content provided
+      fileContent = file;
+      fileType = "txt";
+      filename = "document";
+    } else {
+      throw new ExecutionError(
+        "MISSING_INPUT",
+        "Document parsing requires either 'dataId' (from data library) or 'file' input",
+        false
+      );
+    }
+
+    ctx.onProgress(30, `Processing ${fileType.toUpperCase()} document...`);
+
+    // Parse based on file type
+    let parsedContent: {
+      text: string;
+      sections?: Array<{ heading: string; content: string }>;
+      tables?: Array<{ name: string; headers: string[]; rows: string[][] }>;
+      metadata: Record<string, unknown>;
+    };
+
+    switch (fileType) {
+      case "pdf": {
+        ctx.onProgress(40, "Extracting PDF text...");
+        // For PDF, we'd use pdf-parse in a real implementation
+        // Since pdf-parse requires Buffer and we're in browser context for demo,
+        // provide structured fallback
+        const textContent = typeof fileContent === "string" ? fileContent : "";
+        const paragraphs = textContent.split(/\n\n+/).filter(p => p.trim());
+
+        parsedContent = {
+          text: textContent.slice(0, 5000),
+          sections: paragraphs.slice(0, 10).map((p, i) => ({
+            heading: `Section ${i + 1}`,
+            content: p.trim(),
+          })),
+          tables: [],
+          metadata: {
+            filename,
+            type: "pdf",
+            wordCount: textContent.split(/\s+/).length,
+            extractedAt: new Date().toISOString(),
+          },
+        };
+        break;
+      }
+
+      case "txt": {
+        ctx.onProgress(40, "Processing text file...");
+        const textContent = typeof fileContent === "string" ? fileContent : String(fileContent);
+        const lines = textContent.split("\n");
+
+        parsedContent = {
+          text: textContent,
+          sections: [{
+            heading: "Content",
+            content: textContent,
+          }],
+          metadata: {
+            filename,
+            type: "txt",
+            lineCount: lines.length,
+            wordCount: textContent.split(/\s+/).length,
+            extractedAt: new Date().toISOString(),
+          },
+        };
+        break;
+      }
+
+      case "docx": {
+        ctx.onProgress(40, "Processing Word document...");
+        // For DOCX, mammoth would be used in server context
+        const textContent = typeof fileContent === "string" ? fileContent : "";
+
+        parsedContent = {
+          text: textContent,
+          sections: [{
+            heading: "Document Content",
+            content: textContent,
+          }],
+          metadata: {
+            filename,
+            type: "docx",
+            wordCount: textContent.split(/\s+/).length,
+            extractedAt: new Date().toISOString(),
+          },
+        };
+        break;
+      }
+
+      default: {
+        // Generic text handling
+        const textContent = typeof fileContent === "string" ? fileContent : JSON.stringify(fileContent);
+        parsedContent = {
+          text: textContent,
+          metadata: {
+            filename,
+            type: fileType,
+            extractedAt: new Date().toISOString(),
+          },
+        };
+      }
+    }
+
+    ctx.onProgress(80, "Finalizing extraction...");
+
+    // Extract tables if requested and available
+    if (extractTables && parsedContent.text) {
+      ctx.onProgress(85, "Detecting tables...");
+      // Simple table detection from text (looking for tab-separated or pipe-separated data)
+      const lines = parsedContent.text.split("\n");
+      const potentialTables: Array<{ name: string; headers: string[]; rows: string[][] }> = [];
+
+      let currentTable: string[][] = [];
+      let inTable = false;
+
+      for (const line of lines) {
+        const cells = line.split(/\t|\|/).map(c => c.trim()).filter(c => c);
+        if (cells.length >= 2) {
+          if (!inTable) {
+            inTable = true;
+            currentTable = [];
+          }
+          currentTable.push(cells);
+        } else if (inTable && currentTable.length >= 2) {
+          potentialTables.push({
+            name: `Table ${potentialTables.length + 1}`,
+            headers: currentTable[0],
+            rows: currentTable.slice(1),
+          });
+          currentTable = [];
+          inTable = false;
+        }
+      }
+
+      // Add last table if exists
+      if (inTable && currentTable.length >= 2) {
+        potentialTables.push({
+          name: `Table ${potentialTables.length + 1}`,
+          headers: currentTable[0],
+          rows: currentTable.slice(1),
+        });
+      }
+
+      if (potentialTables.length > 0) {
+        parsedContent.tables = potentialTables;
+      }
+    }
+
+    ctx.onProgress(95, "Complete");
 
     return {
-      content: {
-        text: "This is extracted document text. In production, this would contain the actual parsed content from the uploaded file.",
-        sections: [
-          { heading: "Introduction", content: "Document introduction text..." },
-          { heading: "Main Content", content: "Primary document content..." },
-          { heading: "Conclusion", content: "Document conclusions..." },
-        ],
-        tables: extractTables ? [
-          {
-            name: "Table 1",
-            headers: ["Column A", "Column B", "Column C"],
-            rows: [
-              ["Value 1", "Value 2", "Value 3"],
-              ["Value 4", "Value 5", "Value 6"],
-            ],
-          },
-        ] : [],
-        images: extractImages ? [
-          { name: "Figure 1", description: "Chart showing growth trends" },
-        ] : [],
-        metadata: {
-          pageCount: 10,
-          wordCount: 2500,
-          extractedAt: new Date().toISOString(),
-        },
-      },
+      content: parsedContent,
     };
   }
 

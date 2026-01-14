@@ -32,6 +32,58 @@ export interface AnalyticsMetrics {
 
   // Recent activity
   recentExecutions: RecentExecution[];
+
+  // === NEW: Decision Quality Metrics ===
+  decisionQuality: {
+    avgConfidence: number;
+    confidenceDistribution: { bucket: string; count: number }[];
+    highConfidenceRate: number; // % of decisions with confidence > 0.8
+  };
+
+  // === NEW: Uncertainty Analysis ===
+  uncertaintyAnalysis: {
+    avgUncertainty: number;
+    epistemicRatio: number; // % epistemic vs aleatory
+    aleatoryRatio: number;
+    highUncertaintyDecisions: number;
+  };
+
+  // === NEW: Model Tier Usage ===
+  modelTierUsage: {
+    haiku: { count: number; cost: number };
+    sonnet: { count: number; cost: number };
+    opus: { count: number; cost: number };
+  };
+
+  // === NEW: Simulation Insights ===
+  simulationInsights: {
+    totalSimulations: number;
+    equilibriumRate: number; // % that converged
+    avgRoundsToConverge: number;
+    avgAgentsPerSim: number;
+  };
+
+  // === NEW: Causal Drivers ===
+  topCausalDrivers: {
+    variable: string;
+    avgEffect: number;
+    frequency: number;
+  }[];
+
+  // === NEW: Primitive Performance ===
+  primitivePerformance: {
+    name: string;
+    avgTime: number;
+    count: number;
+    successRate: number;
+  }[];
+
+  // === NEW: Cost Efficiency ===
+  costEfficiency: {
+    costPerDecision: number;
+    costPerSuccessfulDecision: number;
+    costTrend: DataPoint[];
+  };
 }
 
 export interface RecentExecution {
@@ -146,6 +198,65 @@ function generateMockMetrics(): AnalyticsMetrics {
         duration: 12 * 60,
       },
     ],
+
+    // Decision quality metrics
+    decisionQuality: {
+      avgConfidence: 0.78,
+      confidenceDistribution: [
+        { bucket: "0-0.2", count: 2 },
+        { bucket: "0.2-0.4", count: 5 },
+        { bucket: "0.4-0.6", count: 12 },
+        { bucket: "0.6-0.8", count: 18 },
+        { bucket: "0.8-1.0", count: 10 },
+      ],
+      highConfidenceRate: 0.21,
+    },
+
+    // Uncertainty analysis
+    uncertaintyAnalysis: {
+      avgUncertainty: 0.32,
+      epistemicRatio: 0.45,
+      aleatoryRatio: 0.55,
+      highUncertaintyDecisions: 8,
+    },
+
+    // Model tier usage
+    modelTierUsage: {
+      haiku: { count: 124, cost: 4.2 },
+      sonnet: { count: 78, cost: 18.5 },
+      opus: { count: 12, cost: 24.5 },
+    },
+
+    // Simulation insights
+    simulationInsights: {
+      totalSimulations: 23,
+      equilibriumRate: 0.87,
+      avgRoundsToConverge: 4.2,
+      avgAgentsPerSim: 3.5,
+    },
+
+    // Top causal drivers
+    topCausalDrivers: [
+      { variable: "Market Size", avgEffect: 0.42, frequency: 18 },
+      { variable: "Competitor Response", avgEffect: 0.35, frequency: 15 },
+      { variable: "Price Elasticity", avgEffect: 0.28, frequency: 12 },
+      { variable: "Regulatory Risk", avgEffect: 0.22, frequency: 9 },
+    ],
+
+    // Primitive performance
+    primitivePerformance: [
+      { name: "reason.analyze", avgTime: 8.2, count: 34, successRate: 0.97 },
+      { name: "sim.montecarlo.oasis", avgTime: 45.3, count: 28, successRate: 0.89 },
+      { name: "game.equilibrium", avgTime: 32.1, count: 22, successRate: 0.91 },
+      { name: "reason.compare", avgTime: 5.4, count: 18, successRate: 0.98 },
+    ],
+
+    // Cost efficiency
+    costEfficiency: {
+      costPerDecision: 1.02,
+      costPerSuccessfulDecision: 1.08,
+      costTrend: generateHistory(1, 0.3),
+    },
   };
 }
 

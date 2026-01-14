@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   AreaChart,
@@ -19,153 +19,87 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
-  Calendar,
-  ChevronDown,
   Loader2,
+  Zap,
+  Target,
+  AlertTriangle,
+  Activity,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import type { AnalyticsMetrics } from "@/stores/analytics";
 
 type Period = "7d" | "30d" | "90d";
 
-interface MetricData {
-  date: string;
-  value: number;
-}
-
-interface AnalyticsData {
-  executions: {
-    total: number;
-    change: number;
-    data: MetricData[];
-  };
-  successRate: {
-    value: number;
-    change: number;
-    data: MetricData[];
-  };
-  avgDuration: {
-    value: number;
-    change: number;
-    data: MetricData[];
-  };
-  cost: {
-    total: number;
-    change: number;
-    data: MetricData[];
-  };
-  topWorkflows: {
-    name: string;
-    runs: number;
-    successRate: number;
-    avgDuration: number;
-  }[];
-  topPrimitives: {
-    name: string;
-    uses: number;
-    percentage: number;
-  }[];
-}
+// ============================================
+// DESIGN.MD CONSTANTS
+// ============================================
+const COLORS = {
+  bgBase: "hsl(0, 0%, 7%)",
+  bgElevated: "hsl(0, 0%, 9%)",
+  bgHover: "hsl(0, 0%, 12%)",
+  borderSubtle: "hsl(0, 0%, 12%)",
+  borderDefault: "hsl(0, 0%, 15%)",
+  textPrimary: "hsl(0, 0%, 93%)",
+  textSecondary: "hsl(0, 0%, 70%)",
+  textTertiary: "hsl(0, 0%, 50%)",
+  textQuaternary: "hsl(0, 0%, 35%)",
+  success: "hsl(142, 70%, 45%)",
+  warning: "hsl(38, 90%, 50%)",
+  error: "hsl(0, 70%, 55%)",
+};
 
 export default function AnalyticsPage() {
   const router = useRouter();
   const [period, setPeriod] = useState<Period>("30d");
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<AnalyticsData | null>(null);
+  const [data, setData] = useState<AnalyticsMetrics | null>(null);
 
   useEffect(() => {
-    // Fetch real analytics data from API
     const fetchAnalytics = async () => {
       setLoading(true);
       try {
         const periodDays = period === "7d" ? 7 : period === "30d" ? 30 : 90;
         const response = await fetch(`/api/analytics?period=${periodDays}`);
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch analytics");
-        }
-
+        if (!response.ok) throw new Error("Failed to fetch");
         const apiData = await response.json();
-
-        // Transform API data to page format
-        const transformedData: AnalyticsData = {
-          executions: {
-            total: apiData.totalRuns,
-            change: apiData.runsChange,
-            data: apiData.runsHistory,
-          },
-          successRate: {
-            value: apiData.successRate,
-            change: apiData.successRateChange,
-            data: apiData.successHistory,
-          },
-          avgDuration: {
-            value: apiData.avgExecutionTime,
-            change: apiData.avgTimeChange,
-            data: apiData.timeHistory,
-          },
-          cost: {
-            total: apiData.totalCost,
-            change: apiData.costChange,
-            data: apiData.costHistory,
-          },
-          topWorkflows: apiData.recentExecutions.slice(0, 5).map((exec: {
-            workflowName: string;
-            duration?: number;
-            status: string;
-          }) => ({
-            name: exec.workflowName,
-            runs: 1,
-            successRate: exec.status === "completed" ? 100 : exec.status === "failed" ? 0 : 50,
-            avgDuration: exec.duration ? Math.round(exec.duration) : 0,
-          })),
-          topPrimitives: apiData.mostUsedPrimitives.map((prim: { name: string; count: number }, idx: number, arr: { count: number }[]) => ({
-            name: prim.name,
-            uses: prim.count,
-            percentage: arr[0]?.count > 0 ? Math.round((prim.count / arr[0].count) * 100) : 0,
-          })),
-        };
-
-        setData(transformedData);
+        setData(apiData);
       } catch (error) {
         console.error("Failed to fetch analytics:", error);
-        // Set empty data on error
-        setData(getEmptyData(period));
       } finally {
         setLoading(false);
       }
     };
-
     fetchAnalytics();
   }, [period]);
 
   const periodDays = period === "7d" ? 7 : period === "30d" ? 30 : 90;
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="h-14 border-b border-border flex items-center justify-between px-6">
+    <div className="min-h-screen bg-[hsl(0,0%,7%)]">
+      {/* Header - design.md: 14px height, border-subtle */}
+      <header className="h-14 border-b border-[hsl(0,0%,12%)] flex items-center justify-between px-6">
         <div className="flex items-center gap-4">
           <button
             onClick={() => router.push("/")}
-            className="text-muted-foreground hover:text-foreground transition-colors"
+            className="text-[hsl(0,0%,50%)] hover:text-[hsl(0,0%,85%)] transition-colors duration-100"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <h1 className="text-sm font-medium text-foreground">Analytics</h1>
+          {/* design.md: 13px font, medium weight */}
+          <h1 className="text-[13px] font-medium text-[hsl(0,0%,93%)]">Analytics</h1>
         </div>
 
-        {/* Period Selector */}
-        <div className="flex items-center gap-1 p-1 bg-secondary/50 rounded-md">
+        {/* Period Selector - design.md: ghost buttons, 100ms transition */}
+        <div className="flex items-center gap-1 p-1 bg-[hsl(0,0%,9%)] rounded-md border border-[hsl(0,0%,12%)]">
           {(["7d", "30d", "90d"] as Period[]).map((p) => (
             <button
               key={p}
               onClick={() => setPeriod(p)}
               className={cn(
-                "px-3 py-1 text-xs font-medium rounded transition-colors",
+                "px-3 py-1 text-[11px] font-medium rounded transition-colors duration-100",
                 period === p
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-[hsl(0,0%,14%)] text-[hsl(0,0%,93%)]"
+                  : "text-[hsl(0,0%,50%)] hover:text-[hsl(0,0%,70%)]"
               )}
             >
               {p === "7d" ? "7 days" : p === "30d" ? "30 days" : "90 days"}
@@ -176,72 +110,228 @@ export default function AnalyticsPage() {
 
       {loading ? (
         <div className="flex items-center justify-center h-64">
-          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+          <Loader2 className="w-4 h-4 animate-spin text-[hsl(0,0%,50%)]" />
         </div>
       ) : data ? (
-        <div className="max-w-6xl mx-auto px-6 py-8">
-          {/* Summary Cards */}
-          <div className="grid grid-cols-4 gap-4 mb-8">
+        <div className="max-w-6xl mx-auto px-6 py-6">
+          {/* ============================================ */}
+          {/* PRIMARY METRICS ROW */}
+          {/* ============================================ */}
+          <div className="grid grid-cols-4 gap-3 mb-6">
             <MetricCard
-              label="Total Executions"
-              value={data.executions.total.toString()}
-              change={data.executions.change}
-              period={period}
+              label="Decisions"
+              value={data.totalRuns.toString()}
+              change={data.runsChange}
             />
             <MetricCard
               label="Success Rate"
-              value={`${data.successRate.value}%`}
-              change={data.successRate.change}
-              period={period}
+              value={`${data.successRate}%`}
+              change={data.successRateChange}
             />
             <MetricCard
-              label="Avg Duration"
-              value={`${data.avgDuration.value}s`}
-              change={data.avgDuration.change}
-              period={period}
+              label="Avg Time"
+              value={`${data.avgExecutionTime}s`}
+              change={data.avgTimeChange}
               invertTrend
             />
             <MetricCard
               label="Total Cost"
-              value={`$${data.cost.total.toFixed(2)}`}
-              change={data.cost.change}
-              period={period}
+              value={`$${data.totalCost.toFixed(2)}`}
+              change={data.costChange}
             />
           </div>
 
-          {/* Charts Row */}
-          <div className="grid grid-cols-2 gap-6 mb-8">
+          {/* ============================================ */}
+          {/* DECISION QUALITY & COST EFFICIENCY */}
+          {/* ============================================ */}
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            {/* Decision Quality */}
+            <SectionCard title="Decision Quality" icon={<Target className="w-3.5 h-3.5" />}>
+              <div className="flex items-baseline gap-3 mb-4">
+                <span className="text-[24px] font-semibold text-[hsl(0,0%,93%)] tabular-nums">
+                  {Math.round(data.decisionQuality.avgConfidence * 100)}%
+                </span>
+                <span className="text-[11px] text-[hsl(0,0%,50%)]">avg confidence</span>
+              </div>
+              {/* Confidence Distribution */}
+              <div className="space-y-2">
+                {data.decisionQuality.confidenceDistribution.map((bucket) => (
+                  <div key={bucket.bucket} className="flex items-center gap-3">
+                    <span className="text-[11px] text-[hsl(0,0%,50%)] w-14">{bucket.bucket}</span>
+                    <div className="flex-1 h-1.5 bg-[hsl(0,0%,12%)] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[hsl(0,0%,40%)] rounded-full transition-all duration-300"
+                        style={{
+                          width: `${Math.min(100, (bucket.count / Math.max(1, data.totalRuns)) * 100 * 5)}%`,
+                        }}
+                      />
+                    </div>
+                    <span className="text-[11px] text-[hsl(0,0%,50%)] tabular-nums w-6 text-right">
+                      {bucket.count}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 pt-3 border-t border-[hsl(0,0%,12%)]">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-[hsl(0,0%,50%)]">High confidence (80%+)</span>
+                  <span className="text-[hsl(0,0%,70%)] tabular-nums">{data.decisionQuality.highConfidenceRate}%</span>
+                </div>
+              </div>
+            </SectionCard>
+
+            {/* Model Tier Usage */}
+            <SectionCard title="Model Usage" icon={<Zap className="w-3.5 h-3.5" />}>
+              <div className="space-y-3">
+                <ModelTierRow
+                  name="Haiku"
+                  count={data.modelTierUsage.haiku.count}
+                  cost={data.modelTierUsage.haiku.cost}
+                  total={
+                    data.modelTierUsage.haiku.count +
+                    data.modelTierUsage.sonnet.count +
+                    data.modelTierUsage.opus.count
+                  }
+                  color="hsl(142, 50%, 45%)"
+                />
+                <ModelTierRow
+                  name="Sonnet"
+                  count={data.modelTierUsage.sonnet.count}
+                  cost={data.modelTierUsage.sonnet.cost}
+                  total={
+                    data.modelTierUsage.haiku.count +
+                    data.modelTierUsage.sonnet.count +
+                    data.modelTierUsage.opus.count
+                  }
+                  color="hsl(210, 50%, 55%)"
+                />
+                <ModelTierRow
+                  name="Opus"
+                  count={data.modelTierUsage.opus.count}
+                  cost={data.modelTierUsage.opus.cost}
+                  total={
+                    data.modelTierUsage.haiku.count +
+                    data.modelTierUsage.sonnet.count +
+                    data.modelTierUsage.opus.count
+                  }
+                  color="hsl(280, 50%, 55%)"
+                />
+              </div>
+              <div className="mt-4 pt-3 border-t border-[hsl(0,0%,12%)]">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-[hsl(0,0%,50%)]">Cost per decision</span>
+                  <span className="text-[hsl(0,0%,70%)] tabular-nums">${data.costEfficiency.costPerDecision.toFixed(2)}</span>
+                </div>
+              </div>
+            </SectionCard>
+          </div>
+
+          {/* ============================================ */}
+          {/* UNCERTAINTY & SIMULATION INSIGHTS */}
+          {/* ============================================ */}
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            {/* Uncertainty Analysis */}
+            <SectionCard title="Uncertainty Analysis" icon={<AlertTriangle className="w-3.5 h-3.5" />}>
+              <div className="flex items-baseline gap-3 mb-4">
+                <span className="text-[24px] font-semibold text-[hsl(0,0%,93%)] tabular-nums">
+                  {Math.round(data.uncertaintyAnalysis.avgUncertainty * 100)}%
+                </span>
+                <span className="text-[11px] text-[hsl(0,0%,50%)]">avg uncertainty</span>
+              </div>
+              {/* Epistemic vs Aleatory */}
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="h-2 flex-1 bg-[hsl(0,0%,12%)] rounded-full overflow-hidden flex">
+                    <div
+                      className="h-full bg-[hsl(210,50%,45%)]"
+                      style={{ width: `${data.uncertaintyAnalysis.epistemicRatio}%` }}
+                    />
+                    <div
+                      className="h-full bg-[hsl(38,70%,50%)]"
+                      style={{ width: `${data.uncertaintyAnalysis.aleatoryRatio}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-between text-[11px]">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-sm bg-[hsl(210,50%,45%)]" />
+                    <span className="text-[hsl(0,0%,50%)]">Epistemic</span>
+                    <span className="text-[hsl(0,0%,70%)] tabular-nums">{data.uncertaintyAnalysis.epistemicRatio}%</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-sm bg-[hsl(38,70%,50%)]" />
+                    <span className="text-[hsl(0,0%,50%)]">Aleatory</span>
+                    <span className="text-[hsl(0,0%,70%)] tabular-nums">{data.uncertaintyAnalysis.aleatoryRatio}%</span>
+                  </div>
+                </div>
+              </div>
+              <div className="pt-3 border-t border-[hsl(0,0%,12%)]">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-[hsl(0,0%,50%)]">High uncertainty decisions</span>
+                  <span className="text-[hsl(0,0%,70%)] tabular-nums">{data.uncertaintyAnalysis.highUncertaintyDecisions}</span>
+                </div>
+              </div>
+            </SectionCard>
+
+            {/* Simulation Insights */}
+            <SectionCard title="Simulation Insights" icon={<Activity className="w-3.5 h-3.5" />}>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="text-[20px] font-semibold text-[hsl(0,0%,93%)] tabular-nums">
+                    {data.simulationInsights.totalSimulations}
+                  </div>
+                  <div className="text-[11px] text-[hsl(0,0%,50%)]">total simulations</div>
+                </div>
+                <div>
+                  <div className="text-[20px] font-semibold text-[hsl(0,0%,93%)] tabular-nums">
+                    {data.simulationInsights.equilibriumRate}%
+                  </div>
+                  <div className="text-[11px] text-[hsl(0,0%,50%)]">equilibrium rate</div>
+                </div>
+                <div>
+                  <div className="text-[20px] font-semibold text-[hsl(0,0%,93%)] tabular-nums">
+                    {data.simulationInsights.avgRoundsToConverge.toFixed(1)}
+                  </div>
+                  <div className="text-[11px] text-[hsl(0,0%,50%)]">avg rounds</div>
+                </div>
+                <div>
+                  <div className="text-[20px] font-semibold text-[hsl(0,0%,93%)] tabular-nums">
+                    {data.simulationInsights.avgAgentsPerSim}
+                  </div>
+                  <div className="text-[11px] text-[hsl(0,0%,50%)]">avg agents</div>
+                </div>
+              </div>
+            </SectionCard>
+          </div>
+
+          {/* ============================================ */}
+          {/* CHARTS ROW */}
+          {/* ============================================ */}
+          <div className="grid grid-cols-2 gap-4 mb-6">
             {/* Executions Over Time */}
-            <div className="border border-border rounded-md p-5">
-              <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-4">
-                Executions Over Time
-              </h3>
-              <div className="h-52">
+            <SectionCard title="Executions Over Time">
+              <div className="h-44">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={data.executions.data}>
+                  <AreaChart data={data.runsHistory}>
                     <defs>
                       <linearGradient id="execGradient" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor="hsl(0, 0%, 45%)" stopOpacity={0.2} />
                         <stop offset="100%" stopColor="hsl(0, 0%, 45%)" stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="hsl(0, 0%, 15%)"
-                      vertical={false}
-                    />
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(0, 0%, 12%)" vertical={false} />
                     <XAxis
                       dataKey="date"
                       axisLine={false}
                       tickLine={false}
                       tick={{ fontSize: 10, fill: "hsl(0, 0%, 40%)" }}
-                      tickFormatter={(v) => formatXAxisDate(v, periodDays)}
+                      tickFormatter={(v) => formatDate(v, periodDays)}
                     />
                     <YAxis
                       axisLine={false}
                       tickLine={false}
                       tick={{ fontSize: 10, fill: "hsl(0, 0%, 40%)" }}
-                      width={30}
+                      width={28}
                     />
                     <Tooltip content={<CustomTooltip />} />
                     <Area
@@ -254,39 +344,32 @@ export default function AnalyticsPage() {
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
-            </div>
+            </SectionCard>
 
             {/* Success Rate Over Time */}
-            <div className="border border-border rounded-md p-5">
-              <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-4">
-                Success Rate
-              </h3>
-              <div className="h-52">
+            <SectionCard title="Success Rate">
+              <div className="h-44">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={data.successRate.data}>
+                  <AreaChart data={data.successHistory}>
                     <defs>
                       <linearGradient id="successGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="hsl(145, 40%, 45%)" stopOpacity={0.2} />
-                        <stop offset="100%" stopColor="hsl(145, 40%, 45%)" stopOpacity={0} />
+                        <stop offset="0%" stopColor="hsl(142, 50%, 45%)" stopOpacity={0.2} />
+                        <stop offset="100%" stopColor="hsl(142, 50%, 45%)" stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="hsl(0, 0%, 15%)"
-                      vertical={false}
-                    />
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(0, 0%, 12%)" vertical={false} />
                     <XAxis
                       dataKey="date"
                       axisLine={false}
                       tickLine={false}
                       tick={{ fontSize: 10, fill: "hsl(0, 0%, 40%)" }}
-                      tickFormatter={(v) => formatXAxisDate(v, periodDays)}
+                      tickFormatter={(v) => formatDate(v, periodDays)}
                     />
                     <YAxis
                       axisLine={false}
                       tickLine={false}
                       tick={{ fontSize: 10, fill: "hsl(0, 0%, 40%)" }}
-                      width={30}
+                      width={28}
                       domain={[0, 100]}
                       tickFormatter={(v) => `${v}%`}
                     />
@@ -294,142 +377,141 @@ export default function AnalyticsPage() {
                     <Area
                       type="monotone"
                       dataKey="value"
-                      stroke="hsl(145, 40%, 50%)"
+                      stroke="hsl(142, 50%, 50%)"
                       strokeWidth={1.5}
                       fill="url(#successGradient)"
                     />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
-            </div>
+            </SectionCard>
           </div>
 
-          {/* Tables Row */}
-          <div className="grid grid-cols-2 gap-6">
-            {/* Top Workflows */}
-            <div className="border border-border rounded-md">
-              <div className="px-5 py-4 border-b border-border">
-                <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Top Workflows
-                </h3>
-              </div>
-              <div className="divide-y divide-border/50">
-                {data.topWorkflows.map((wf, i) => (
-                  <div key={i} className="px-5 py-3 flex items-center gap-4">
-                    <span className="text-xs text-muted-foreground/50 w-4 tabular-nums">
-                      {i + 1}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-foreground truncate">{wf.name}</p>
-                    </div>
-                    <div className="flex items-center gap-6 text-xs text-muted-foreground">
-                      <span className="tabular-nums">{wf.runs} runs</span>
-                      <span className="tabular-nums">{wf.successRate}%</span>
-                      <span className="tabular-nums w-12 text-right">{wf.avgDuration}s</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Top Primitives */}
-            <div className="border border-border rounded-md">
-              <div className="px-5 py-4 border-b border-border">
-                <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Most Used Primitives
-                </h3>
-              </div>
-              <div className="p-5">
-                <div className="space-y-3">
-                  {data.topPrimitives.map((prim, i) => (
-                    <div key={i} className="space-y-1.5">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-foreground">{prim.name}</span>
-                        <span className="text-muted-foreground tabular-nums">{prim.uses}</span>
-                      </div>
-                      <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+          {/* ============================================ */}
+          {/* CAUSAL DRIVERS & PRIMITIVE PERFORMANCE */}
+          {/* ============================================ */}
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            {/* Top Causal Drivers */}
+            <SectionCard title="Top Causal Drivers">
+              {data.topCausalDrivers.length > 0 ? (
+                <div className="space-y-2.5">
+                  {data.topCausalDrivers.map((driver, i) => (
+                    <div key={driver.variable} className="flex items-center gap-3">
+                      <span className="text-[11px] text-[hsl(0,0%,35%)] w-4 tabular-nums">{i + 1}</span>
+                      <span className="text-[13px] text-[hsl(0,0%,85%)] flex-1 truncate">{driver.variable}</span>
+                      <div className="w-20 h-1.5 bg-[hsl(0,0%,12%)] rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-foreground/30 rounded-full"
-                          style={{ width: `${prim.percentage}%` }}
+                          className="h-full bg-[hsl(0,0%,50%)] rounded-full"
+                          style={{ width: `${Math.min(100, driver.avgEffect * 100)}%` }}
                         />
                       </div>
+                      <span className="text-[11px] text-[hsl(0,0%,50%)] tabular-nums w-10 text-right">
+                        {driver.avgEffect.toFixed(2)}
+                      </span>
                     </div>
                   ))}
                 </div>
-              </div>
-            </div>
+              ) : (
+                <EmptyState message="No causal data yet" />
+              )}
+            </SectionCard>
+
+            {/* Primitive Performance */}
+            <SectionCard title="Primitive Performance">
+              {data.primitivePerformance.length > 0 ? (
+                <div className="space-y-2.5">
+                  {data.primitivePerformance.slice(0, 5).map((prim) => (
+                    <div key={prim.name} className="flex items-center gap-3">
+                      <span className="text-[13px] text-[hsl(0,0%,85%)] flex-1 truncate">{prim.name}</span>
+                      <span className="text-[11px] text-[hsl(0,0%,50%)] tabular-nums">{prim.count}x</span>
+                      <span className="text-[11px] text-[hsl(0,0%,50%)] tabular-nums w-12 text-right">{prim.avgTime}s</span>
+                      <span className={cn(
+                        "text-[11px] tabular-nums w-10 text-right",
+                        prim.successRate >= 90 ? "text-[hsl(142,50%,50%)]" :
+                        prim.successRate >= 70 ? "text-[hsl(0,0%,70%)]" :
+                        "text-[hsl(0,70%,55%)]"
+                      )}>
+                        {prim.successRate}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState message="No primitive data yet" />
+              )}
+            </SectionCard>
           </div>
 
-          {/* Cost Breakdown */}
-          <div className="mt-6 border border-border rounded-md p-5">
-            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-4">
-              Cost Over Time
-            </h3>
-            <div className="h-40">
+          {/* ============================================ */}
+          {/* COST OVER TIME */}
+          {/* ============================================ */}
+          <SectionCard title="Cost Over Time">
+            <div className="h-36">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={data.cost.data}>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke="hsl(0, 0%, 15%)"
-                    vertical={false}
-                  />
+                <BarChart data={data.costHistory}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(0, 0%, 12%)" vertical={false} />
                   <XAxis
                     dataKey="date"
                     axisLine={false}
                     tickLine={false}
                     tick={{ fontSize: 10, fill: "hsl(0, 0%, 40%)" }}
-                    tickFormatter={(v) => formatXAxisDate(v, periodDays)}
+                    tickFormatter={(v) => formatDate(v, periodDays)}
                   />
                   <YAxis
                     axisLine={false}
                     tickLine={false}
                     tick={{ fontSize: 10, fill: "hsl(0, 0%, 40%)" }}
-                    width={40}
+                    width={36}
                     tickFormatter={(v) => `$${v}`}
                   />
                   <Tooltip content={<CustomTooltip prefix="$" />} />
                   <Bar dataKey="value" radius={[2, 2, 0, 0]}>
-                    {data.cost.data.map((_, index) => (
-                      <Cell key={index} fill="hsl(0, 0%, 35%)" />
+                    {data.costHistory.map((_, index) => (
+                      <Cell key={index} fill="hsl(0, 0%, 30%)" />
                     ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
-          </div>
+          </SectionCard>
         </div>
       ) : null}
     </div>
   );
 }
 
+// ============================================
+// COMPONENTS
+// ============================================
+
 function MetricCard({
   label,
   value,
   change,
-  period,
   invertTrend = false,
 }: {
   label: string;
   value: string;
   change: number;
-  period: Period;
   invertTrend?: boolean;
 }) {
   const isPositive = invertTrend ? change < 0 : change > 0;
   const isNegative = invertTrend ? change > 0 : change < 0;
 
   return (
-    <div className="border border-border rounded-md p-4">
-      <p className="text-xs text-muted-foreground mb-1">{label}</p>
+    // design.md: bg-elevated hsl(0,0%,9%), border-subtle hsl(0,0%,12%), radius 6px
+    <div className="bg-[hsl(0,0%,9%)] border border-[hsl(0,0%,12%)] rounded-md p-4">
+      {/* design.md: 11px uppercase tracking-wide for labels */}
+      <p className="text-[11px] text-[hsl(0,0%,50%)] uppercase tracking-wide mb-1">{label}</p>
       <div className="flex items-baseline gap-2">
-        <span className="text-2xl font-semibold text-foreground tabular-nums">{value}</span>
+        {/* design.md: 20px for large values */}
+        <span className="text-[20px] font-semibold text-[hsl(0,0%,93%)] tabular-nums">{value}</span>
         <span
           className={cn(
-            "flex items-center gap-0.5 text-xs font-medium",
+            "flex items-center gap-0.5 text-[11px] font-medium",
             isPositive && "text-emerald-400",
             isNegative && "text-rose-400",
-            !isPositive && !isNegative && "text-muted-foreground"
+            !isPositive && !isNegative && "text-[hsl(0,0%,50%)]"
           )}
         >
           {change > 0 ? (
@@ -442,7 +524,72 @@ function MetricCard({
           {Math.abs(change)}%
         </span>
       </div>
-      <p className="text-xs text-muted-foreground/60 mt-1">vs previous {period}</p>
+    </div>
+  );
+}
+
+function SectionCard({
+  title,
+  icon,
+  children,
+}: {
+  title: string;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    // design.md: bg-elevated, border-subtle, radius 6px, padding 16px (space-4)
+    <div className="bg-[hsl(0,0%,9%)] border border-[hsl(0,0%,12%)] rounded-md p-4">
+      {/* design.md: 11px uppercase tracking-wide, text-tertiary */}
+      <div className="flex items-center gap-2 mb-4">
+        {icon && <span className="text-[hsl(0,0%,45%)]">{icon}</span>}
+        <h3 className="text-[11px] font-medium text-[hsl(0,0%,50%)] uppercase tracking-wide">
+          {title}
+        </h3>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function ModelTierRow({
+  name,
+  count,
+  cost,
+  total,
+  color,
+}: {
+  name: string;
+  count: number;
+  cost: number;
+  total: number;
+  color: string;
+}) {
+  const percentage = total > 0 ? (count / total) * 100 : 0;
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[13px] text-[hsl(0,0%,85%)]">{name}</span>
+        <div className="flex items-center gap-3 text-[11px]">
+          <span className="text-[hsl(0,0%,50%)] tabular-nums">{count}</span>
+          <span className="text-[hsl(0,0%,50%)] tabular-nums">${cost.toFixed(2)}</span>
+        </div>
+      </div>
+      <div className="h-1.5 bg-[hsl(0,0%,12%)] rounded-full overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-300"
+          style={{ width: `${percentage}%`, backgroundColor: color }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <div className="flex items-center justify-center h-24">
+      <p className="text-[11px] text-[hsl(0,0%,35%)]">{message}</p>
     </div>
   );
 }
@@ -463,9 +610,10 @@ function CustomTooltip({
   if (!active || !payload?.length) return null;
 
   return (
-    <div className="bg-popover border border-border rounded-md px-3 py-2 shadow-lg">
-      <p className="text-xs text-muted-foreground mb-1">{label}</p>
-      <p className="text-sm font-medium text-foreground tabular-nums">
+    // design.md: bg-elevated, border-default, radius 4px
+    <div className="bg-[hsl(0,0%,10%)] border border-[hsl(0,0%,15%)] rounded px-3 py-2">
+      <p className="text-[11px] text-[hsl(0,0%,50%)] mb-0.5">{label}</p>
+      <p className="text-[13px] font-medium text-[hsl(0,0%,93%)] tabular-nums">
         {prefix}
         {typeof payload[0].value === "number"
           ? payload[0].value.toFixed(suffix === "%" ? 0 : 2)
@@ -476,38 +624,10 @@ function CustomTooltip({
   );
 }
 
-function formatXAxisDate(dateStr: string, periodDays: number): string {
+function formatDate(dateStr: string, periodDays: number): string {
   const date = new Date(dateStr);
   if (periodDays <= 7) {
     return date.toLocaleDateString("en-US", { weekday: "short" });
-  } else if (periodDays <= 30) {
-    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  } else {
-    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   }
-}
-
-// Generate empty data structure for error fallback
-function getEmptyData(period: Period): AnalyticsData {
-  const days = period === "7d" ? 7 : period === "30d" ? 30 : 90;
-  const emptyTimeSeries: MetricData[] = [];
-  const now = new Date();
-
-  for (let i = days - 1; i >= 0; i--) {
-    const date = new Date(now);
-    date.setDate(date.getDate() - i);
-    emptyTimeSeries.push({
-      date: date.toISOString().split("T")[0],
-      value: 0,
-    });
-  }
-
-  return {
-    executions: { total: 0, change: 0, data: emptyTimeSeries },
-    successRate: { value: 0, change: 0, data: emptyTimeSeries },
-    avgDuration: { value: 0, change: 0, data: emptyTimeSeries },
-    cost: { total: 0, change: 0, data: emptyTimeSeries },
-    topWorkflows: [],
-    topPrimitives: [],
-  };
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }

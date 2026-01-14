@@ -12,7 +12,11 @@ import {
 import { nanoid } from "nanoid";
 import type { NodeState } from "@/types";
 import { primitives } from "@/lib/primitives";
-import { playbooks, instantiatePlaybook, getEntryNodeIds, type Playbook } from "@/lib/playbooks";
+import {
+  playbookPatterns,
+  playbookToReactFlow,
+  type PlaybookPattern,
+} from "@/lib/primitives/presets";
 
 // History snapshot for undo/redo
 interface HistorySnapshot {
@@ -592,10 +596,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   addPlaybook: (playbookId, position) => {
     const state = get();
-    const playbook = playbooks[playbookId];
+    const pattern = playbookPatterns[playbookId];
 
-    if (!playbook) {
-      console.warn(`Playbook not found: ${playbookId}`);
+    if (!pattern) {
+      console.warn(`Playbook pattern not found: ${playbookId}`);
       return;
     }
 
@@ -604,50 +608,74 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     // Generate unique prefix for this playbook instance
     const instancePrefix = `pb-${nanoid(6)}`;
 
-    // Instantiate the playbook nodes and edges
-    const { nodes: playbookNodes, edges: playbookEdges } = instantiatePlaybook(
-      playbook,
-      position,
-      instancePrefix
-    );
+    // Convert playbook pattern to ReactFlow nodes/edges
+    const { nodes: templateNodes, edges: templateEdges } = playbookToReactFlow(pattern);
 
-    // Get entry node IDs for auto-connect
-    const entryNodeIds = getEntryNodeIds(playbook, instancePrefix);
+    // Instantiate nodes with unique IDs and positioned relative to drop point
+    const playbookNodes: Node[] = templateNodes.map((node) => {
+      const newId = `${instancePrefix}-${node.id}`;
+      const primitive = primitives[node.data.primitive as string];
+
+      return {
+        ...node,
+        id: newId,
+        type: "primitive",
+        position: {
+          x: position.x + (node.position?.x || 0),
+          y: position.y + (node.position?.y || 0),
+        },
+        data: {
+          primitiveId: node.data.primitive,
+          label: node.data.name as string,
+          icon: primitive?.icon || "Database",
+          color: primitive?.color || "hsl(0,0%,50%)",
+          category: primitive?.category,
+          config: node.data.config || {},
+          state: "idle" as NodeState,
+        },
+      };
+    });
+
+    // Map edge IDs to new node IDs
+    const playbookEdges: Edge[] = templateEdges.map((edge) => ({
+      ...edge,
+      id: `${instancePrefix}-${edge.id}`,
+      source: `${instancePrefix}-${edge.source}`,
+      target: `${instancePrefix}-${edge.target}`,
+      animated: true,
+      style: { stroke: "hsl(0,0%,30%)", strokeWidth: 1.5 },
+    }));
+
+    // Get entry nodes (nodes with no incoming edges)
+    const targetNodeIds = new Set(playbookEdges.map((e) => e.target));
+    const entryNodes = playbookNodes.filter((n) => !targetNodeIds.has(n.id));
 
     // Auto-connect: if there's a selected node, try to connect its outputs to playbook's entry points
     const autoConnectEdges: Edge[] = [];
 
-    if (state.selectedNodeId) {
+    if (state.selectedNodeId && entryNodes.length > 0) {
       const selectedNode = state.nodes.find((n) => n.id === state.selectedNodeId);
 
       if (selectedNode) {
         const selectedPrimitive = primitives[(selectedNode.data as { primitiveId: string })?.primitiveId];
 
-        if (selectedPrimitive && selectedPrimitive.outputs.length > 0 && entryNodeIds.length > 0) {
-          // Get the first output of the selected node
+        if (selectedPrimitive && selectedPrimitive.outputs.length > 0) {
           const firstOutput = selectedPrimitive.outputs[0];
+          const firstEntryNode = entryNodes[0];
+          const entryPrimitive = primitives[(firstEntryNode.data as { primitiveId: string })?.primitiveId];
 
-          // Get the first entry node of the playbook
-          const firstEntryId = entryNodeIds[0];
-          const firstEntryNode = playbookNodes.find((n) => n.id === firstEntryId);
+          if (entryPrimitive && entryPrimitive.inputs.length > 0) {
+            const firstInput = entryPrimitive.inputs[0];
 
-          if (firstEntryNode) {
-            const entryPrimitive = primitives[(firstEntryNode.data as { primitiveId: string })?.primitiveId];
-
-            if (entryPrimitive && entryPrimitive.inputs.length > 0) {
-              const firstInput = entryPrimitive.inputs[0];
-
-              // Create auto-connect edge
-              autoConnectEdges.push({
-                id: `auto-${nanoid(6)}`,
-                source: state.selectedNodeId,
-                sourceHandle: firstOutput.id,
-                target: firstEntryId,
-                targetHandle: firstInput.id,
-                animated: true,
-                style: { stroke: "#6366f1", strokeWidth: 2 },
-              });
-            }
+            autoConnectEdges.push({
+              id: `auto-${nanoid(6)}`,
+              source: state.selectedNodeId,
+              sourceHandle: firstOutput.id,
+              target: firstEntryNode.id,
+              targetHandle: firstInput.id,
+              animated: true,
+              style: { stroke: "hsl(0,0%,30%)", strokeWidth: 1.5 },
+            });
           }
         }
       }
@@ -657,7 +685,6 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     set({
       nodes: [...state.nodes, ...playbookNodes],
       edges: [...state.edges, ...playbookEdges, ...autoConnectEdges],
-      // Select all the newly added nodes
       selectedNodeIds: new Set(playbookNodes.map((n) => n.id)),
       selectedNodeId: playbookNodes.length === 1 ? playbookNodes[0].id : null,
     });

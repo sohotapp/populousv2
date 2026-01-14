@@ -286,3 +286,173 @@ export interface UncertaintySummary {
     contribution: number;
   }>;
 }
+
+// ============ DATA SOURCES (Airbyte Integration) ============
+
+export const dataSources = pgTable("data_sources", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  connectorType: text("connector_type").notNull(), // 'salesforce', 'hubspot', 'postgres', etc.
+  connectorImage: text("connector_image"), // Docker image or icon
+  configEncrypted: text("config_encrypted"), // Encrypted credentials JSON
+  status: text("status").notNull().default("pending"), // pending, connecting, ready, syncing, error
+  errorMessage: text("error_message"),
+  lastSyncAt: timestamp("last_sync_at"),
+  lastSyncDurationMs: integer("last_sync_duration_ms"),
+  recordCount: integer("record_count").default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const sourceSchemas = pgTable("source_schemas", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sourceId: uuid("source_id").references(() => dataSources.id).notNull(),
+  streamName: text("stream_name").notNull(), // 'contacts', 'leads', etc.
+  streamNamespace: text("stream_namespace"), // Schema/database name
+  jsonSchema: jsonb("json_schema").notNull().$type<Record<string, unknown>>(),
+  fields: jsonb("fields").notNull().$type<SourceField[]>(),
+  sampleRecords: jsonb("sample_records").$type<Record<string, unknown>[]>(),
+  discoveredAt: timestamp("discovered_at").defaultNow(),
+  recordCount: integer("record_count"),
+});
+
+export const fieldMappings = pgTable("field_mappings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sourceId: uuid("source_id").references(() => dataSources.id).notNull(),
+  streamName: text("stream_name").notNull(),
+  sourceField: text("source_field").notNull(), // Field path in source
+  targetTrait: text("target_trait").notNull(), // RLTX trait (age, income_bracket, etc.)
+  transformType: text("transform_type").notNull(), // 'direct', 'date_to_age', 'income_to_bracket', etc.
+  transformConfig: jsonb("transform_config").$type<Record<string, unknown>>(),
+  matchMethod: text("match_method").notNull(), // 'exact', 'fuzzy', 'semantic', 'ai', 'manual'
+  confidence: real("confidence").notNull(),
+  userConfirmed: boolean("user_confirmed").default(false),
+  validationErrors: jsonb("validation_errors").$type<string[]>(),
+  sampleOutput: jsonb("sample_output").$type<unknown[]>(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const populationIndices = pgTable("population_indices", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sourceId: uuid("source_id").references(() => dataSources.id).notNull(),
+  streamName: text("stream_name").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  filters: jsonb("filters").$type<Record<string, unknown>>(),
+  distributions: jsonb("distributions").notNull().$type<Record<string, TraitDistribution>>(),
+  segments: jsonb("segments").$type<PopulationSegment[]>(),
+  totalRecords: integer("total_records").notNull(),
+  completeRecords: integer("complete_records").notNull(),
+  traitCoverage: jsonb("trait_coverage").$type<Record<string, number>>(),
+  status: text("status").default("building"), // building, ready, stale
+  builtAt: timestamp("built_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const syncedRecords = pgTable("synced_records", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sourceId: uuid("source_id").references(() => dataSources.id).notNull(),
+  streamName: text("stream_name").notNull(),
+  externalId: text("external_id").notNull(),
+  rawData: jsonb("raw_data").notNull().$type<Record<string, unknown>>(),
+  syncedAt: timestamp("synced_at").defaultNow(),
+  checksum: text("checksum"),
+});
+
+export const indexedAgents = pgTable("indexed_agents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  populationId: uuid("population_id").references(() => populationIndices.id).notNull(),
+  sourceRecordId: uuid("source_record_id").references(() => syncedRecords.id),
+  traits: jsonb("traits").notNull().$type<AgentTraits>(),
+  inferredTraits: jsonb("inferred_traits").$type<Partial<AgentTraits>>(),
+  traitCompleteness: real("trait_completeness").notNull(),
+  inferenceConfidence: real("inference_confidence"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const syncJobs = pgTable("sync_jobs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sourceId: uuid("source_id").references(() => dataSources.id).notNull(),
+  jobType: text("job_type").notNull(), // 'full', 'incremental'
+  status: text("status").default("pending"), // pending, running, completed, failed
+  recordsProcessed: integer("records_processed").default(0),
+  recordsTotal: integer("records_total"),
+  currentStream: text("current_stream"),
+  errorMessage: text("error_message"),
+  errorDetails: jsonb("error_details").$type<Record<string, unknown>>(),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ============ DATA SOURCE TYPES ============
+
+export interface SourceField {
+  name: string;
+  type: string; // 'string', 'number', 'date', 'boolean', 'object', 'array'
+  nullable: boolean;
+  sample?: unknown;
+  suggestedTrait?: string;
+  suggestedTransform?: string;
+  confidence?: number;
+}
+
+export interface TraitDistribution {
+  [value: string]: {
+    count: number;
+    percentage: number;
+  };
+}
+
+export interface PopulationSegment {
+  name: string;
+  criteria: Record<string, unknown>;
+  count: number;
+  percentage: number;
+}
+
+export interface AgentTraits {
+  // Demographics
+  age?: number;
+  gender?: "male" | "female" | "non-binary" | "other";
+  income?: number;
+  income_bracket?: "low" | "medium" | "high" | "affluent";
+  education?: "high_school" | "some_college" | "bachelors" | "graduate" | "doctorate";
+  occupation?: string;
+  location_type?: "urban" | "suburban" | "rural";
+  location_name?: string;
+  household_composition?: string;
+  // Psychographics
+  values?: string[];
+  risk_tolerance?: number;
+  price_sensitivity?: number;
+  information_seeking?: number;
+  brand_loyalty?: number;
+  // Custom
+  [key: string]: unknown;
+}
+
+export interface ConnectorDefinition {
+  id: string;
+  name: string;
+  icon: string;
+  category: "crm" | "database" | "warehouse" | "files" | "api" | "marketing" | "analytics" | "other";
+  description: string;
+  popularity: number; // 1-5 stars
+  authType: "oauth" | "api_key" | "basic" | "connection_string";
+  configFields: ConfigField[];
+}
+
+export interface ConfigField {
+  name: string;
+  label: string;
+  type: "text" | "password" | "select" | "checkbox";
+  required: boolean;
+  placeholder?: string;
+  options?: { value: string; label: string }[];
+  helpText?: string;
+}

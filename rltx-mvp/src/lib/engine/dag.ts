@@ -159,7 +159,7 @@ export function resolveNodeInputs(
 export function createExecutionPlan(
   nodes: Node[],
   edges: Edge[],
-  primitives: Record<string, { estimatedTime: { p50: number; p95: number }; estimatedCost: { dollars: number } }>
+  primitives: Record<string, { estimatedTime?: { p50: number; p95: number }; estimatedCost?: { dollars: number } }>
 ): ExecutionPlan {
   const levels = topologicalSort(nodes, edges);
 

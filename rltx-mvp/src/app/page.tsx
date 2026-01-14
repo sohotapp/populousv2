@@ -27,11 +27,21 @@ import {
   ExternalLink,
   Bell,
   ArchiveRestore,
+  Database,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Target,
+  Zap,
+  AlertTriangle,
+  Activity,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { RLTXIcon } from "@/components/ui/RLTXIcon";
+import { NewWorkflowModal } from "@/components/workflow/NewWorkflowModal";
+import { DataPanel } from "@/components/data/DataPanel";
 
 // ============ DESIGN TOKENS FROM DESIGN.MD ============
 const colors = {
@@ -77,7 +87,7 @@ interface WorkflowItem {
   archived?: boolean;
 }
 
-type ViewFilter = "all" | "starred" | "inbox" | "analytics" | "archive";
+type ViewFilter = "all" | "starred" | "inbox" | "analytics" | "archive" | "data";
 
 export default function HomePage() {
   const router = useRouter();
@@ -85,8 +95,6 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newQuestion, setNewQuestion] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeView, setActiveView] = useState<ViewFilter>("all");
   const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
@@ -299,19 +307,32 @@ export default function HomePage() {
     }
   };
 
-  const createWorkflow = async () => {
-    if (!newName.trim() || !newQuestion.trim()) return;
+  const createWorkflow = async (config: {
+    name: string;
+    question: string;
+    decisionType: string;
+    analysisDepth: string;
+    playbook?: string;
+  }) => {
+    if (!config.name.trim() || !config.question.trim()) return;
 
     setCreating(true);
     try {
       const res = await fetch("/api/workflows", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName, question: newQuestion }),
+        body: JSON.stringify({
+          name: config.name,
+          question: config.question,
+          decisionType: config.decisionType,
+          analysisDepth: config.analysisDepth,
+          playbook: config.playbook,
+        }),
       });
 
       if (res.ok) {
         const workflow = await res.json();
+        setShowCreate(false);
         router.push(`/workflow/${workflow.id}`);
       }
     } catch (error) {
@@ -346,6 +367,7 @@ export default function HomePage() {
     inbox: "Inbox",
     analytics: "Analytics",
     archive: "Archive",
+    data: "Data Library",
   };
 
   // Command palette items
@@ -422,6 +444,12 @@ export default function HomePage() {
             active={activeView === "starred"}
             count={starredCount > 0 ? starredCount : undefined}
             onClick={() => setActiveView("starred")}
+          />
+          <SidebarItem
+            icon={Database}
+            label="Data"
+            active={activeView === "data"}
+            onClick={() => setActiveView("data")}
           />
           <SidebarItem
             icon={BarChart2}
@@ -530,15 +558,18 @@ export default function HomePage() {
                     onBlur={(e) => (e.target.style.borderColor = colors.borderDefault)}
                   />
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowCreate(true)}
-                  className="h-7 gap-1.5 text-[13px]"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  New
-                </Button>
+                {/* Only show New button in "all" view, not starred/archive */}
+                {activeView === "all" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowCreate(true)}
+                    className="h-7 gap-1.5 text-[13px]"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    New
+                  </Button>
+                )}
               </>
             )}
           </div>
@@ -548,14 +579,10 @@ export default function HomePage() {
         <div className="flex-1 overflow-auto">
           {/* Create Modal */}
           {showCreate && (
-            <CreateModal
-              newName={newName}
-              setNewName={setNewName}
-              newQuestion={newQuestion}
-              setNewQuestion={setNewQuestion}
-              creating={creating}
+            <NewWorkflowModal
               onClose={() => setShowCreate(false)}
               onCreate={createWorkflow}
+              creating={creating}
             />
           )}
 
@@ -571,8 +598,12 @@ export default function HomePage() {
           )}
 
           {/* View Content */}
-          {activeView === "analytics" ? (
-            <AnalyticsView workflows={workflows.filter((w) => !archivedIds.has(w.id))} />
+          {activeView === "data" ? (
+            <div className="h-full">
+              <DataPanel />
+            </div>
+          ) : activeView === "analytics" ? (
+            <AnalyticsView workflows={workflows} archivedIds={archivedIds} />
           ) : activeView === "inbox" ? (
             <InboxView />
           ) : loading ? (
@@ -665,94 +696,6 @@ function SidebarItem({
         </span>
       )}
     </button>
-  );
-}
-
-// ============ CREATE MODAL ============
-function CreateModal({
-  newName,
-  setNewName,
-  newQuestion,
-  setNewQuestion,
-  creating,
-  onClose,
-  onCreate,
-}: {
-  newName: string;
-  setNewName: (v: string) => void;
-  newQuestion: string;
-  setNewQuestion: (v: string) => void;
-  creating: boolean;
-  onClose: () => void;
-  onCreate: () => void;
-}) {
-  return (
-    <div
-      className="fixed inset-0 flex items-center justify-center z-50 animate-fade-in"
-      style={{ background: "rgba(0,0,0,0.6)" }}
-    >
-      <div
-        className="w-full max-w-md rounded-lg animate-slide-up"
-        style={{
-          background: colors.bgElevated,
-          border: `1px solid ${colors.borderDefault}`,
-          boxShadow: "0 16px 48px rgba(0,0,0,0.6)",
-        }}
-      >
-        <div className="p-4" style={{ borderBottom: `1px solid ${colors.borderSubtle}` }}>
-          <h2 className="text-[13px] font-medium" style={{ color: colors.textPrimary }}>
-            New Workflow
-          </h2>
-          <p className="text-[11px] mt-1" style={{ color: colors.textTertiary }}>
-            Define your decision or analysis question
-          </p>
-        </div>
-        <div className="p-4 space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-[11px] font-medium" style={{ color: colors.textTertiary }}>
-              Name
-            </label>
-            <Input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="Market Expansion Analysis"
-              className="h-8 text-[13px]"
-              autoFocus
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-[11px] font-medium" style={{ color: colors.textTertiary }}>
-              Question
-            </label>
-            <Input
-              value={newQuestion}
-              onChange={(e) => setNewQuestion(e.target.value)}
-              placeholder="Should we expand into Europe?"
-              className="h-8 text-[13px]"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && newName && newQuestion) onCreate();
-              }}
-            />
-          </div>
-        </div>
-        <div
-          className="p-4 flex justify-end gap-2"
-          style={{ borderTop: `1px solid ${colors.borderSubtle}` }}
-        >
-          <Button variant="ghost" size="sm" onClick={onClose} className="h-7 text-[13px]">
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            onClick={onCreate}
-            disabled={creating || !newName.trim() || !newQuestion.trim()}
-            className="h-7 text-[13px]"
-          >
-            {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Create"}
-          </Button>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -1123,21 +1066,32 @@ function EmptyState({
       title: "Archive is empty",
       desc: "Archived workflows will appear here",
     },
+    data: {
+      icon: Database,
+      title: "No data yet",
+      desc: "Upload CSV, JSON, or PDF files to use in workflows",
+    },
   };
 
   const { icon: Icon, title, desc } = config[activeView];
 
   return (
-    <div className="flex flex-col items-center justify-center h-64 text-center px-6">
-      {/* DESIGN.md: icon color hsl(0,0%,20%) for empty states */}
-      <Icon className="w-6 h-6 mb-4" style={{ color: colors.iconEmpty }} />
+    // design.md: padding 48px 24px, centered
+    <div
+      className="flex flex-col items-center justify-center text-center"
+      style={{ padding: "48px 24px" }}
+    >
+      {/* design.md: icon color hsl(0,0%,20%), margin-bottom 16px */}
+      <Icon className="w-6 h-6" style={{ color: colors.iconEmpty, marginBottom: "16px" }} />
+      {/* design.md: 13px, font-weight 500, hsl(0,0%,50%) */}
       <h2
-        className="text-[13px] font-medium mb-1"
+        className="text-[13px] font-medium"
         style={{ color: colors.textTertiary }}
       >
         {title}
       </h2>
-      <p className="text-[13px] max-w-xs" style={{ color: colors.textQuaternary }}>
+      {/* design.md: 13px, hsl(0,0%,35%), margin-top 4px */}
+      <p className="text-[13px] max-w-xs" style={{ color: colors.textQuaternary, marginTop: "4px" }}>
         {desc}
       </p>
       {activeView === "all" && (
@@ -1158,246 +1112,341 @@ function EmptyState({
 // ============ INBOX VIEW ============
 function InboxView() {
   return (
-    <div className="flex flex-col items-center justify-center h-64 text-center px-6">
-      <Bell className="w-6 h-6 mb-4" style={{ color: colors.iconEmpty }} />
-      <h2 className="text-[13px] font-medium mb-1" style={{ color: colors.textTertiary }}>
+    // design.md: padding 48px 24px, centered
+    <div
+      className="flex flex-col items-center justify-center text-center"
+      style={{ padding: "48px 24px" }}
+    >
+      {/* design.md: icon color hsl(0,0%,20%), margin-bottom 16px */}
+      <Bell className="w-6 h-6" style={{ color: colors.iconEmpty, marginBottom: "16px" }} />
+      {/* design.md: 13px, font-weight 500, hsl(0,0%,50%) */}
+      <h2 className="text-[13px] font-medium" style={{ color: colors.textTertiary }}>
         No notifications
       </h2>
-      <p className="text-[13px] max-w-xs" style={{ color: colors.textQuaternary }}>
+      {/* design.md: 13px, hsl(0,0%,35%), margin-top 4px */}
+      <p className="text-[13px] max-w-xs" style={{ color: colors.textQuaternary, marginTop: "4px" }}>
         Workflow updates and activity will appear here
       </p>
     </div>
   );
 }
 
-// ============ ANALYTICS VIEW ============
-function AnalyticsView({ workflows }: { workflows: WorkflowItem[] }) {
-  const analytics = useMemo(() => {
-    const total = workflows.length;
-    const completed = workflows.filter((w) => w.status === "completed").length;
-    const failed = workflows.filter((w) => w.status === "failed").length;
-    const running = workflows.filter((w) => w.status === "running").length;
-    const draft = workflows.filter((w) => w.status === "draft").length;
+// ============ COMPREHENSIVE ANALYTICS VIEW (Real Data) ============
+function AnalyticsView({
+  workflows,
+  archivedIds,
+}: {
+  workflows: WorkflowItem[];
+  archivedIds: Set<string>;
+}) {
+  const [period, setPeriod] = useState<"7d" | "14d" | "30d">("14d");
+  const periodDays = period === "7d" ? 7 : period === "30d" ? 30 : 14;
 
-    const byDate = new Map<string, number>();
+  // Compute real metrics from local workflow data
+  const metrics = useMemo(() => {
+    const activeWorkflows = workflows.filter((w) => !archivedIds.has(w.id));
     const now = new Date();
-    for (let i = 13; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - i);
-      byDate.set(d.toISOString().split("T")[0], 0);
+    const periodStart = new Date(now);
+    periodStart.setDate(periodStart.getDate() - periodDays);
+
+    // Filter workflows within period
+    const workflowsInPeriod = activeWorkflows.filter(
+      (w) => new Date(w.createdAt) >= periodStart
+    );
+
+    // Status counts
+    const completed = activeWorkflows.filter((w) => w.status === "completed").length;
+    const running = activeWorkflows.filter((w) => w.status === "running").length;
+    const failed = activeWorkflows.filter((w) => w.status === "failed").length;
+    const draft = activeWorkflows.filter((w) => w.status === "draft").length;
+
+    // Success rate
+    const finishedWorkflows = completed + failed;
+    const successRate = finishedWorkflows > 0 ? Math.round((completed / finishedWorkflows) * 100) : 0;
+
+    // Generate activity history (workflows created per day)
+    const activityHistory: { date: string; value: number }[] = [];
+    for (let i = periodDays - 1; i >= 0; i--) {
+      const date = new Date(now);
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toISOString().split("T")[0];
+      const count = activeWorkflows.filter((w) => {
+        const created = new Date(w.createdAt).toISOString().split("T")[0];
+        return created === dateStr;
+      }).length;
+      activityHistory.push({ date: dateStr, value: count });
     }
 
-    workflows.forEach((w) => {
-      const date = new Date(w.createdAt).toISOString().split("T")[0];
-      if (byDate.has(date)) byDate.set(date, (byDate.get(date) || 0) + 1);
+    // Previous period for comparison
+    const prevPeriodStart = new Date(periodStart);
+    prevPeriodStart.setDate(prevPeriodStart.getDate() - periodDays);
+    const workflowsInPrevPeriod = activeWorkflows.filter((w) => {
+      const created = new Date(w.createdAt);
+      return created >= prevPeriodStart && created < periodStart;
     });
 
-    const activityHistory = Array.from(byDate.entries()).map(([date, value]) => ({ date, value }));
-    const recentWorkflows = [...workflows]
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-      .slice(0, 5);
+    const prevCount = workflowsInPrevPeriod.length;
+    const currCount = workflowsInPeriod.length;
+    const change = prevCount > 0 ? Math.round(((currCount - prevCount) / prevCount) * 100) : currCount > 0 ? 100 : 0;
 
-    return { total, completed, failed, running, draft, activityHistory, recentWorkflows };
-  }, [workflows]);
+    return {
+      total: activeWorkflows.length,
+      completed,
+      running,
+      failed,
+      draft,
+      successRate,
+      activityHistory,
+      change,
+      workflowsInPeriod: currCount,
+    };
+  }, [workflows, archivedIds, periodDays]);
 
+  const formatChartDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    if (periodDays <= 7) {
+      return date.toLocaleDateString("en-US", { weekday: "short" });
+    }
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  };
+
+  // Empty state if no workflows
   if (workflows.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 text-center px-6">
-        <BarChart2 className="w-6 h-6 mb-4" style={{ color: colors.iconEmpty }} />
-        <h2 className="text-[13px] font-medium mb-1" style={{ color: colors.textTertiary }}>
+      <div
+        className="flex flex-col items-center justify-center text-center"
+        style={{ padding: "48px 24px" }}
+      >
+        <BarChart2 className="w-6 h-6" style={{ color: colors.iconEmpty, marginBottom: "16px" }} />
+        <h2 className="text-[13px] font-medium" style={{ color: colors.textTertiary }}>
           No analytics yet
         </h2>
-        <p className="text-[13px] max-w-xs" style={{ color: colors.textQuaternary }}>
-          Create and run workflows to see analytics
+        <p className="text-[13px] max-w-xs" style={{ color: colors.textQuaternary, marginTop: "4px" }}>
+          Create workflows to see analytics
         </p>
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-6">
-      {/* Metric Cards */}
-      <div className="grid grid-cols-4 gap-3 mb-6">
-        <MetricCard label="Total" value={analytics.total} />
-        <MetricCard label="Completed" value={analytics.completed} />
-        <MetricCard label="Running" value={analytics.running} />
-        <MetricCard label="Draft" value={analytics.draft} />
+    <div className="h-full overflow-auto">
+      {/* Period Selector */}
+      <div className="flex items-center justify-end gap-1 px-6 pt-4 pb-2">
+        {(["7d", "14d", "30d"] as const).map((p) => (
+          <button
+            key={p}
+            onClick={() => setPeriod(p)}
+            className={cn(
+              "px-2.5 py-1 rounded text-[11px] font-medium transition-all duration-100",
+              period === p
+                ? "bg-[hsl(0,0%,14%)] text-[hsl(0,0%,93%)]"
+                : "text-[hsl(0,0%,50%)] hover:text-[hsl(0,0%,70%)] hover:bg-[hsl(0,0%,10%)]"
+            )}
+          >
+            {p === "7d" ? "7 days" : p === "14d" ? "14 days" : "30 days"}
+          </button>
+        ))}
       </div>
 
-      {/* Activity Chart - design.md: cards use 6px radius */}
-      <div
-        className="rounded-md p-4 mb-6"
-        style={{ border: `1px solid ${colors.borderSubtle}` }}
-      >
-        <h3
-          className="text-[11px] font-medium uppercase mb-4"
-          style={{ color: colors.textQuaternary, letterSpacing: "0.02em" }}
-        >
-          Activity (14 days)
-        </h3>
-        <div className="h-40">
-          {analytics.activityHistory.some((d) => d.value > 0) ? (
+      <div className="px-6 pb-6 space-y-4">
+        {/* Primary Metrics Row */}
+        <div className="grid grid-cols-4 gap-3">
+          <AnalyticsMetricCard label="Total Workflows" value={metrics.total.toString()} change={metrics.change} />
+          <AnalyticsMetricCard label="Completed" value={metrics.completed.toString()} change={0} />
+          <AnalyticsMetricCard label="Running" value={metrics.running.toString()} change={0} />
+          <AnalyticsMetricCard label="Success Rate" value={`${metrics.successRate}%`} change={0} />
+        </div>
+
+        {/* Status Breakdown */}
+        <AnalyticsSectionCard title="Workflow Status" icon={<Target className="w-3.5 h-3.5" />}>
+          <div className="grid grid-cols-4 gap-4">
+            <div>
+              <div className="text-[20px] font-semibold tabular-nums" style={{ color: colors.statusSuccess }}>
+                {metrics.completed}
+              </div>
+              <div className="text-[11px]" style={{ color: colors.textTertiary }}>Completed</div>
+            </div>
+            <div>
+              <div className="text-[20px] font-semibold tabular-nums" style={{ color: colors.statusInfo }}>
+                {metrics.running}
+              </div>
+              <div className="text-[11px]" style={{ color: colors.textTertiary }}>Running</div>
+            </div>
+            <div>
+              <div className="text-[20px] font-semibold tabular-nums" style={{ color: colors.textSecondary }}>
+                {metrics.draft}
+              </div>
+              <div className="text-[11px]" style={{ color: colors.textTertiary }}>Draft</div>
+            </div>
+            <div>
+              <div className="text-[20px] font-semibold tabular-nums" style={{ color: colors.statusError }}>
+                {metrics.failed}
+              </div>
+              <div className="text-[11px]" style={{ color: colors.textTertiary }}>Failed</div>
+            </div>
+          </div>
+        </AnalyticsSectionCard>
+
+        {/* Activity Chart */}
+        <AnalyticsSectionCard title="Workflow Activity">
+          <div className="h-36">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={analytics.activityHistory}>
+              <AreaChart data={metrics.activityHistory}>
                 <defs>
-                  <linearGradient id="activityGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={colors.textQuaternary} stopOpacity={0.2} />
-                    <stop offset="100%" stopColor={colors.textQuaternary} stopOpacity={0} />
+                  <linearGradient id="activityGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="hsl(0, 0%, 45%)" stopOpacity={0.2} />
+                    <stop offset="100%" stopColor="hsl(0, 0%, 45%)" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke={colors.borderSubtle} vertical={false} />
-                <XAxis
-                  dataKey="date"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 10, fill: colors.textQuaternary }}
-                  tickFormatter={(v) =>
-                    new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" })
-                  }
-                  interval="preserveStartEnd"
-                />
-                <YAxis
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 10, fill: colors.textQuaternary }}
-                  width={20}
-                  allowDecimals={false}
-                />
-                <Tooltip content={<ChartTooltip />} />
-                <Area
-                  type="monotone"
-                  dataKey="value"
-                  stroke={colors.textTertiary}
-                  strokeWidth={1.5}
-                  fill="url(#activityGrad)"
-                />
+                <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: colors.textQuaternary }} tickFormatter={formatChartDate} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: colors.textQuaternary }} width={28} allowDecimals={false} />
+                <Tooltip content={<AnalyticsTooltip />} />
+                <Area type="monotone" dataKey="value" stroke="hsl(0, 0%, 55%)" strokeWidth={1.5} fill="url(#activityGradient)" />
               </AreaChart>
             </ResponsiveContainer>
-          ) : (
-            <div
-              className="h-full flex items-center justify-center text-[11px]"
-              style={{ color: colors.textQuaternary }}
-            >
-              No activity in the last 14 days
+          </div>
+        </AnalyticsSectionCard>
+
+        {/* Execution Metrics (requires database) */}
+        <div className="grid grid-cols-2 gap-4">
+          <AnalyticsSectionCard title="Decision Quality" icon={<Target className="w-3.5 h-3.5" />}>
+            <div className="flex flex-col items-center justify-center h-24 text-center">
+              <p className="text-[11px]" style={{ color: colors.textQuaternary }}>
+                Requires workflow execution data
+              </p>
+              <p className="text-[10px] mt-1" style={{ color: colors.textDisabled }}>
+                Run workflows to see confidence metrics
+              </p>
             </div>
-          )}
-        </div>
-      </div>
+          </AnalyticsSectionCard>
 
-      {/* Status & Recent */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="rounded-md" style={{ border: `1px solid ${colors.borderSubtle}` }}>
-          <div className="px-4 py-3" style={{ borderBottom: `1px solid ${colors.borderSubtle}` }}>
-            <h3
-              className="text-[11px] font-medium uppercase"
-              style={{ color: colors.textQuaternary, letterSpacing: "0.02em" }}
-            >
-              Status
-            </h3>
-          </div>
-          <div className="p-4 space-y-3">
-            <StatusBar label="Completed" count={analytics.completed} total={analytics.total} color={colors.statusSuccess} />
-            <StatusBar label="Running" count={analytics.running} total={analytics.total} color={colors.statusInfo} />
-            <StatusBar label="Draft" count={analytics.draft} total={analytics.total} color={colors.textQuaternary} />
-            <StatusBar label="Failed" count={analytics.failed} total={analytics.total} color={colors.statusError} />
-          </div>
+          <AnalyticsSectionCard title="Model Usage" icon={<Zap className="w-3.5 h-3.5" />}>
+            <div className="flex flex-col items-center justify-center h-24 text-center">
+              <p className="text-[11px]" style={{ color: colors.textQuaternary }}>
+                Requires workflow execution data
+              </p>
+              <p className="text-[10px] mt-1" style={{ color: colors.textDisabled }}>
+                Run workflows to see model tier usage
+              </p>
+            </div>
+          </AnalyticsSectionCard>
         </div>
 
-        <div className="rounded-md" style={{ border: `1px solid ${colors.borderSubtle}` }}>
-          <div className="px-4 py-3" style={{ borderBottom: `1px solid ${colors.borderSubtle}` }}>
-            <h3
-              className="text-[11px] font-medium uppercase"
-              style={{ color: colors.textQuaternary, letterSpacing: "0.02em" }}
-            >
-              Recent
-            </h3>
-          </div>
-          <div>
-            {analytics.recentWorkflows.map((wf, i) => (
-              <div
-                key={wf.id}
-                className="px-4 py-2.5 flex items-center gap-3"
-                style={{ borderBottom: i < 4 ? `1px solid ${colors.borderSubtle}` : "none" }}
-              >
-                <span className="text-[11px] w-3 tabular-nums" style={{ color: colors.textQuaternary }}>
-                  {i + 1}
-                </span>
-                <span className="text-[13px] flex-1 truncate" style={{ color: colors.textPrimary }}>
-                  {wf.name}
-                </span>
-                <span
-                  className="w-2 h-2 rounded-full"
-                  style={{
-                    backgroundColor:
-                      wf.status === "completed"
-                        ? colors.statusSuccess
-                        : wf.status === "running"
-                        ? colors.statusInfo
-                        : wf.status === "failed"
-                        ? colors.statusError
-                        : colors.textQuaternary,
-                  }}
-                />
-              </div>
-            ))}
-          </div>
+        {/* Simulation & Uncertainty (requires database) */}
+        <div className="grid grid-cols-2 gap-4">
+          <AnalyticsSectionCard title="Uncertainty Analysis" icon={<AlertTriangle className="w-3.5 h-3.5" />}>
+            <div className="flex flex-col items-center justify-center h-24 text-center">
+              <p className="text-[11px]" style={{ color: colors.textQuaternary }}>
+                Requires workflow execution data
+              </p>
+              <p className="text-[10px] mt-1" style={{ color: colors.textDisabled }}>
+                Run workflows with simulations
+              </p>
+            </div>
+          </AnalyticsSectionCard>
+
+          <AnalyticsSectionCard title="Simulation Insights" icon={<Activity className="w-3.5 h-3.5" />}>
+            <div className="flex flex-col items-center justify-center h-24 text-center">
+              <p className="text-[11px]" style={{ color: colors.textQuaternary }}>
+                Requires workflow execution data
+              </p>
+              <p className="text-[10px] mt-1" style={{ color: colors.textDisabled }}>
+                Run game theory simulations
+              </p>
+            </div>
+          </AnalyticsSectionCard>
+        </div>
+
+        {/* Causal & Primitive (requires database) */}
+        <div className="grid grid-cols-2 gap-4">
+          <AnalyticsSectionCard title="Top Causal Drivers">
+            <div className="flex flex-col items-center justify-center h-24 text-center">
+              <p className="text-[11px]" style={{ color: colors.textQuaternary }}>
+                Requires workflow execution data
+              </p>
+              <p className="text-[10px] mt-1" style={{ color: colors.textDisabled }}>
+                Run causal analysis primitives
+              </p>
+            </div>
+          </AnalyticsSectionCard>
+
+          <AnalyticsSectionCard title="Primitive Performance">
+            <div className="flex flex-col items-center justify-center h-24 text-center">
+              <p className="text-[11px]" style={{ color: colors.textQuaternary }}>
+                Requires workflow execution data
+              </p>
+              <p className="text-[10px] mt-1" style={{ color: colors.textDisabled }}>
+                Execute primitives to track performance
+              </p>
+            </div>
+          </AnalyticsSectionCard>
         </div>
       </div>
     </div>
   );
 }
 
-function MetricCard({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-md p-3" style={{ border: `1px solid ${colors.borderSubtle}` }}>
-      <p className="text-[11px] mb-0.5" style={{ color: colors.textTertiary }}>
-        {label}
-      </p>
-      <span className="text-xl font-semibold tabular-nums" style={{ color: colors.textPrimary }}>
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function StatusBar({
+// Analytics helper components - design.md compliant
+function AnalyticsMetricCard({
   label,
-  count,
-  total,
-  color,
+  value,
+  change,
+  invertTrend = false,
 }: {
   label: string;
-  count: number;
-  total: number;
-  color: string;
+  value: string;
+  change: number;
+  invertTrend?: boolean;
 }) {
-  const pct = total > 0 ? (count / total) * 100 : 0;
+  const isPositive = invertTrend ? change < 0 : change > 0;
+  const isNegative = invertTrend ? change > 0 : change < 0;
+
   return (
-    <div>
-      <div className="flex justify-between text-[11px] mb-1">
-        <span style={{ color: colors.textSecondary }}>{label}</span>
-        <span className="tabular-nums" style={{ color: colors.textTertiary }}>
-          {count}
+    <div className="rounded-md p-4" style={{ background: colors.bgElevated, border: `1px solid ${colors.borderSubtle}` }}>
+      <p className="text-[11px] uppercase tracking-wide mb-1" style={{ color: colors.textTertiary }}>{label}</p>
+      <div className="flex items-baseline gap-2">
+        <span className="text-[20px] font-semibold tabular-nums" style={{ color: colors.textPrimary }}>{value}</span>
+        <span
+          className={cn(
+            "flex items-center gap-0.5 text-[11px] font-medium",
+            isPositive && "text-emerald-400",
+            isNegative && "text-rose-400",
+            !isPositive && !isNegative && "text-[hsl(0,0%,50%)]"
+          )}
+        >
+          {change > 0 ? <TrendingUp className="w-3 h-3" /> : change < 0 ? <TrendingDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
+          {Math.abs(change)}%
         </span>
-      </div>
-      <div className="h-1 rounded-full overflow-hidden" style={{ background: colors.bgHover }}>
-        <div
-          className="h-full rounded-full transition-all"
-          style={{ width: `${pct}%`, background: color }}
-        />
       </div>
     </div>
   );
 }
 
-function ChartTooltip({
+function AnalyticsSectionCard({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="rounded-md p-4" style={{ background: colors.bgElevated, border: `1px solid ${colors.borderSubtle}` }}>
+      <div className="flex items-center gap-2 mb-4">
+        {icon && <span style={{ color: colors.iconSecondary }}>{icon}</span>}
+        <h3 className="text-[11px] font-medium uppercase tracking-wide" style={{ color: colors.textTertiary }}>{title}</h3>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function AnalyticsTooltip({
   active,
   payload,
   label,
+  prefix = "",
+  suffix = "",
 }: {
   active?: boolean;
   payload?: { value: number }[];
   label?: string;
+  prefix?: string;
+  suffix?: string;
 }) {
   if (!active || !payload?.length) return null;
   return (
@@ -1409,11 +1458,13 @@ function ChartTooltip({
         boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
       }}
     >
-      <p className="text-[11px]" style={{ color: colors.textTertiary }}>
+      <p className="text-[11px] mb-0.5" style={{ color: colors.textTertiary }}>
         {label ? new Date(label).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}
       </p>
       <p className="text-[13px] font-medium tabular-nums" style={{ color: colors.textPrimary }}>
-        {payload[0].value} workflow{payload[0].value !== 1 ? "s" : ""}
+        {prefix}
+        {typeof payload[0].value === "number" ? payload[0].value.toFixed(suffix === "%" ? 0 : 2) : payload[0].value}
+        {suffix}
       </p>
     </div>
   );

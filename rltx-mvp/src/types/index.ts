@@ -2,15 +2,15 @@ export interface Primitive {
   id: string;
   name: string;
   description: string;
-  category: "data" | "reason" | "simulate" | "optimize" | "human" | "output" | "control";
+  category: "agent" | "population" | "orchestrate" | "aggregate" | "branch" | "analyze";
   icon: string;
   color: string;
   inputs: Port[];
   outputs: Port[];
   config: ConfigSchema;
-  executor: "llm" | "compute" | "external" | "human" | "internal";
-  estimatedCost: { dollars: number };
-  estimatedTime: { p50: number; p95: number };
+  executor?: "llm" | "compute" | "external" | "human" | "internal";
+  estimatedCost?: { dollars: number };
+  estimatedTime?: { p50: number; p95: number };
 }
 
 export interface Port {
@@ -48,6 +48,10 @@ export interface ConfigProperty {
   enum?: unknown[];
   minimum?: number;
   maximum?: number;
+  properties?: Record<string, ConfigProperty>;
+  items?: ConfigProperty;
+  required?: string[];
+  format?: string;
 }
 
 export interface CanvasNode {
