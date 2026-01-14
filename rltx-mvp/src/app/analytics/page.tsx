@@ -74,13 +74,69 @@ export default function AnalyticsPage() {
   const [data, setData] = useState<AnalyticsData | null>(null);
 
   useEffect(() => {
-    // Simulate data loading
-    setLoading(true);
-    const timer = setTimeout(() => {
-      setData(generateMockData(period));
-      setLoading(false);
-    }, 400);
-    return () => clearTimeout(timer);
+    // Fetch real analytics data from API
+    const fetchAnalytics = async () => {
+      setLoading(true);
+      try {
+        const periodDays = period === "7d" ? 7 : period === "30d" ? 30 : 90;
+        const response = await fetch(`/api/analytics?period=${periodDays}`);
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch analytics");
+        }
+
+        const apiData = await response.json();
+
+        // Transform API data to page format
+        const transformedData: AnalyticsData = {
+          executions: {
+            total: apiData.totalRuns,
+            change: apiData.runsChange,
+            data: apiData.runsHistory,
+          },
+          successRate: {
+            value: apiData.successRate,
+            change: apiData.successRateChange,
+            data: apiData.successHistory,
+          },
+          avgDuration: {
+            value: apiData.avgExecutionTime,
+            change: apiData.avgTimeChange,
+            data: apiData.timeHistory,
+          },
+          cost: {
+            total: apiData.totalCost,
+            change: apiData.costChange,
+            data: apiData.costHistory,
+          },
+          topWorkflows: apiData.recentExecutions.slice(0, 5).map((exec: {
+            workflowName: string;
+            duration?: number;
+            status: string;
+          }) => ({
+            name: exec.workflowName,
+            runs: 1,
+            successRate: exec.status === "completed" ? 100 : exec.status === "failed" ? 0 : 50,
+            avgDuration: exec.duration ? Math.round(exec.duration) : 0,
+          })),
+          topPrimitives: apiData.mostUsedPrimitives.map((prim: { name: string; count: number }, idx: number, arr: { count: number }[]) => ({
+            name: prim.name,
+            uses: prim.count,
+            percentage: arr[0]?.count > 0 ? Math.round((prim.count / arr[0].count) * 100) : 0,
+          })),
+        };
+
+        setData(transformedData);
+      } catch (error) {
+        console.error("Failed to fetch analytics:", error);
+        // Set empty data on error
+        setData(getEmptyData(period));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAnalytics();
   }, [period]);
 
   const periodDays = period === "7d" ? 7 : period === "30d" ? 30 : 90;
@@ -156,7 +212,7 @@ export default function AnalyticsPage() {
           {/* Charts Row */}
           <div className="grid grid-cols-2 gap-6 mb-8">
             {/* Executions Over Time */}
-            <div className="border border-border rounded-lg p-5">
+            <div className="border border-border rounded-md p-5">
               <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-4">
                 Executions Over Time
               </h3>
@@ -201,7 +257,7 @@ export default function AnalyticsPage() {
             </div>
 
             {/* Success Rate Over Time */}
-            <div className="border border-border rounded-lg p-5">
+            <div className="border border-border rounded-md p-5">
               <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-4">
                 Success Rate
               </h3>
@@ -251,7 +307,7 @@ export default function AnalyticsPage() {
           {/* Tables Row */}
           <div className="grid grid-cols-2 gap-6">
             {/* Top Workflows */}
-            <div className="border border-border rounded-lg">
+            <div className="border border-border rounded-md">
               <div className="px-5 py-4 border-b border-border">
                 <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Top Workflows
@@ -277,7 +333,7 @@ export default function AnalyticsPage() {
             </div>
 
             {/* Top Primitives */}
-            <div className="border border-border rounded-lg">
+            <div className="border border-border rounded-md">
               <div className="px-5 py-4 border-b border-border">
                 <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Most Used Primitives
@@ -305,7 +361,7 @@ export default function AnalyticsPage() {
           </div>
 
           {/* Cost Breakdown */}
-          <div className="mt-6 border border-border rounded-lg p-5">
+          <div className="mt-6 border border-border rounded-md p-5">
             <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-4">
               Cost Over Time
             </h3>
@@ -364,7 +420,7 @@ function MetricCard({
   const isNegative = invertTrend ? change > 0 : change < 0;
 
   return (
-    <div className="border border-border rounded-lg p-4">
+    <div className="border border-border rounded-md p-4">
       <p className="text-xs text-muted-foreground mb-1">{label}</p>
       <div className="flex items-baseline gap-2">
         <span className="text-2xl font-semibold text-foreground tabular-nums">{value}</span>
@@ -431,62 +487,27 @@ function formatXAxisDate(dateStr: string, periodDays: number): string {
   }
 }
 
-function generateMockData(period: Period): AnalyticsData {
+// Generate empty data structure for error fallback
+function getEmptyData(period: Period): AnalyticsData {
   const days = period === "7d" ? 7 : period === "30d" ? 30 : 90;
+  const emptyTimeSeries: MetricData[] = [];
+  const now = new Date();
 
-  const generateTimeSeries = (baseValue: number, variance: number): MetricData[] => {
-    const data: MetricData[] = [];
-    const now = new Date();
-    for (let i = days - 1; i >= 0; i--) {
-      const date = new Date(now);
-      date.setDate(date.getDate() - i);
-      data.push({
-        date: date.toISOString().split("T")[0],
-        value: Math.max(0, baseValue + (Math.random() - 0.5) * variance * 2),
-      });
-    }
-    return data;
-  };
-
-  const execData = generateTimeSeries(5, 3);
-  const successData = generateTimeSeries(92, 8);
-  const costData = generateTimeSeries(4, 2.5);
+  for (let i = days - 1; i >= 0; i--) {
+    const date = new Date(now);
+    date.setDate(date.getDate() - i);
+    emptyTimeSeries.push({
+      date: date.toISOString().split("T")[0],
+      value: 0,
+    });
+  }
 
   return {
-    executions: {
-      total: Math.round(execData.reduce((sum, d) => sum + d.value, 0)),
-      change: Math.round((Math.random() - 0.3) * 30),
-      data: execData.map((d) => ({ ...d, value: Math.round(d.value) })),
-    },
-    successRate: {
-      value: Math.round(successData.reduce((sum, d) => sum + d.value, 0) / successData.length),
-      change: Math.round((Math.random() - 0.4) * 10),
-      data: successData.map((d) => ({ ...d, value: Math.round(d.value) })),
-    },
-    avgDuration: {
-      value: Math.round((8 + Math.random() * 10) * 10) / 10,
-      change: Math.round((Math.random() - 0.5) * 20),
-      data: generateTimeSeries(12, 5),
-    },
-    cost: {
-      total: Math.round(costData.reduce((sum, d) => sum + d.value, 0) * 100) / 100,
-      change: Math.round((Math.random() - 0.3) * 25),
-      data: costData.map((d) => ({ ...d, value: Math.round(d.value * 100) / 100 })),
-    },
-    topWorkflows: [
-      { name: "Market Expansion Analysis", runs: 23, successRate: 96, avgDuration: 14 },
-      { name: "Pricing Strategy", runs: 18, successRate: 89, avgDuration: 11 },
-      { name: "Competitor Response Model", runs: 15, successRate: 93, avgDuration: 18 },
-      { name: "Investment Decision", runs: 12, successRate: 100, avgDuration: 8 },
-      { name: "Risk Assessment", runs: 9, successRate: 78, avgDuration: 22 },
-    ],
-    topPrimitives: [
-      { name: "Deep Analysis", uses: 89, percentage: 100 },
-      { name: "Monte Carlo Simulation", uses: 67, percentage: 75 },
-      { name: "Scenario Analysis", uses: 54, percentage: 61 },
-      { name: "Compare Options", uses: 43, percentage: 48 },
-      { name: "API Fetch", uses: 38, percentage: 43 },
-      { name: "Game Equilibrium", uses: 24, percentage: 27 },
-    ],
+    executions: { total: 0, change: 0, data: emptyTimeSeries },
+    successRate: { value: 0, change: 0, data: emptyTimeSeries },
+    avgDuration: { value: 0, change: 0, data: emptyTimeSeries },
+    cost: { total: 0, change: 0, data: emptyTimeSeries },
+    topWorkflows: [],
+    topPrimitives: [],
   };
 }

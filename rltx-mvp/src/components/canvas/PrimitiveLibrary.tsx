@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import {
   Search,
   ChevronDown,
@@ -118,8 +118,13 @@ const playbookCategoryIcons: Record<PlaybookCategory, LucideIcon> = {
   strategy: Target,
   operational: Users,
   financial: DollarSign,
+  defense: Shield,
   pattern: Puzzle,
 };
+
+// Split panel constraints
+const MIN_PANEL_HEIGHT = 80;
+const DEFAULT_SPLIT_RATIO = 0.35; // 35% playbooks, 65% primitives
 
 interface PrimitiveLibraryProps {
   className?: string;
@@ -130,8 +135,11 @@ export function PrimitiveLibrary({
 }: PrimitiveLibraryProps) {
   const [search, setSearch] = useState("");
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
-    new Set([...Object.keys(categoryConfig), "playbooks", "templates", "patterns"])
+    new Set(["templates", "patterns", ...Object.keys(categoryConfig)])
   );
+  const [splitRatio, setSplitRatio] = useState(DEFAULT_SPLIT_RATIO);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
 
   const toggleCategory = (category: string) => {
     setExpandedCategories((prev) => {
@@ -144,6 +152,41 @@ export function PrimitiveLibrary({
       return next;
     });
   };
+
+  // Handle split drag
+  const handleDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDragging.current = true;
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging.current || !containerRef.current) return;
+
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const containerHeight = containerRect.height;
+      const relativeY = e.clientY - containerRect.top;
+
+      // Calculate new ratio with constraints
+      const newRatio = Math.max(
+        MIN_PANEL_HEIGHT / containerHeight,
+        Math.min(1 - MIN_PANEL_HEIGHT / containerHeight, relativeY / containerHeight)
+      );
+
+      setSplitRatio(newRatio);
+    };
+
+    const handleMouseUp = () => {
+      isDragging.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  }, []);
 
   // Filter and group primitives
   const { groupedPrimitives, sortedCategories } = useMemo(() => {
@@ -220,15 +263,15 @@ export function PrimitiveLibrary({
   };
 
   const hasPlaybookResults = filteredTemplates.length > 0 || filteredPatterns.length > 0;
-  const showPlaybooks = !search || hasPlaybookResults;
+  const hasPrimitiveResults = sortedCategories.length > 0;
 
   return (
     <div className={cn(
       "flex flex-col h-full bg-[hsl(0,0%,7%)]",
       className
     )}>
-      {/* Search */}
-      <div className="p-2.5">
+      {/* Search - fixed at top */}
+      <div className="p-2.5 flex-shrink-0">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[hsl(0,0%,40%)]" />
           <Input
@@ -240,55 +283,42 @@ export function PrimitiveLibrary({
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto px-1.5">
-        {/* Playbooks Section */}
-        {showPlaybooks && (
-          <div className="mb-2">
-            {/* Playbooks Header */}
-            <button
-              onClick={() => toggleCategory("playbooks")}
-              className="flex items-center gap-1.5 w-full px-1.5 py-1.5 text-[hsl(0,0%,50%)] hover:text-[hsl(0,0%,65%)] transition-colors"
-            >
-              <ChevronDown
-                className={cn(
-                  "w-3 h-3 transition-transform duration-100",
-                  !expandedCategories.has("playbooks") && "-rotate-90"
-                )}
-              />
-              <BookOpen className="w-3.5 h-3.5" />
-              <span className="text-[11px] font-medium tracking-wide">
-                PLAYBOOKS
-              </span>
-            </button>
-
-            {expandedCategories.has("playbooks") && (
-              <div className="ml-1">
+      {/* Split container */}
+      <div ref={containerRef} className="flex-1 flex flex-col min-h-0">
+        {/* Top: Playbooks Section */}
+        <div
+          className="flex-shrink-0 overflow-hidden flex flex-col"
+          style={{ height: `${splitRatio * 100}%` }}
+        >
+          <div className="flex-1 overflow-y-auto px-1.5">
+            {hasPlaybookResults || !search ? (
+              <>
                 {/* Templates Sub-section */}
-                {filteredTemplates.length > 0 && (
+                {(filteredTemplates.length > 0 || !search) && (
                   <div className="mt-1">
                     <button
                       onClick={() => toggleCategory("templates")}
-                      className="flex items-center gap-1.5 w-full px-1.5 py-1 text-[hsl(0,0%,40%)] hover:text-[hsl(0,0%,55%)] transition-colors"
+                      className="flex items-center gap-1.5 w-full px-1.5 py-1.5 text-[hsl(0,0%,50%)] hover:text-[hsl(0,0%,65%)] transition-colors duration-100"
                     >
-                      <ChevronRight
+                      <ChevronDown
                         className={cn(
-                          "w-2.5 h-2.5 transition-transform duration-100",
-                          expandedCategories.has("templates") && "rotate-90"
+                          "w-3 h-3 transition-transform duration-100",
+                          !expandedCategories.has("templates") && "-rotate-90"
                         )}
                       />
-                      <span className="text-[10px] font-medium tracking-wide uppercase">
-                        Templates
+                      <BookOpen className="w-3.5 h-3.5" />
+                      <span className="text-[11px] font-medium tracking-wide">
+                        TEMPLATES
                       </span>
-                      <span className="text-[9px] text-[hsl(0,0%,30%)] ml-auto">
+                      <span className="text-[9px] text-[hsl(0,0%,30%)] ml-auto tabular-nums">
                         {filteredTemplates.length}
                       </span>
                     </button>
 
                     {expandedCategories.has("templates") && (
-                      <div className="ml-2">
+                      <div className="ml-1">
                         {Object.entries(templatesByCategory).map(([category, templates]) => (
-                          <div key={category} className="mt-1">
+                          <div key={category} className="mt-0.5">
                             <div className="flex items-center gap-1.5 px-1.5 py-0.5">
                               {(() => {
                                 const CategoryIcon = playbookCategoryIcons[category as PlaybookCategory] || Target;
@@ -313,29 +343,29 @@ export function PrimitiveLibrary({
                 )}
 
                 {/* Patterns Sub-section */}
-                {filteredPatterns.length > 0 && (
+                {(filteredPatterns.length > 0 || !search) && (
                   <div className="mt-1">
                     <button
                       onClick={() => toggleCategory("patterns")}
-                      className="flex items-center gap-1.5 w-full px-1.5 py-1 text-[hsl(0,0%,40%)] hover:text-[hsl(0,0%,55%)] transition-colors"
+                      className="flex items-center gap-1.5 w-full px-1.5 py-1.5 text-[hsl(0,0%,50%)] hover:text-[hsl(0,0%,65%)] transition-colors duration-100"
                     >
-                      <ChevronRight
+                      <ChevronDown
                         className={cn(
-                          "w-2.5 h-2.5 transition-transform duration-100",
-                          expandedCategories.has("patterns") && "rotate-90"
+                          "w-3 h-3 transition-transform duration-100",
+                          !expandedCategories.has("patterns") && "-rotate-90"
                         )}
                       />
-                      <Puzzle className="w-3 h-3" />
-                      <span className="text-[10px] font-medium tracking-wide uppercase">
-                        Patterns
+                      <Puzzle className="w-3.5 h-3.5" />
+                      <span className="text-[11px] font-medium tracking-wide">
+                        PATTERNS
                       </span>
-                      <span className="text-[9px] text-[hsl(0,0%,30%)] ml-auto">
+                      <span className="text-[9px] text-[hsl(0,0%,30%)] ml-auto tabular-nums">
                         {filteredPatterns.length}
                       </span>
                     </button>
 
                     {expandedCategories.has("patterns") && (
-                      <div className="ml-2">
+                      <div className="ml-1">
                         {filteredPatterns.map((playbook) => (
                           <PlaybookItem
                             key={playbook.id}
@@ -347,71 +377,102 @@ export function PrimitiveLibrary({
                     )}
                   </div>
                 )}
+              </>
+            ) : (
+              <div className="flex items-center justify-center h-full text-[11px] text-[hsl(0,0%,35%)]">
+                No playbooks found
               </div>
             )}
-
-            {/* Divider */}
-            <div className="h-px bg-[hsl(0,0%,12%)] mx-1.5 my-2" />
           </div>
-        )}
+        </div>
 
-        {/* Primitives Categories */}
-        {sortedCategories.map((categoryKey) => {
-          const config = categoryConfig[categoryKey];
-          const categoryPrimitives = groupedPrimitives[categoryKey] || [];
-          const isExpanded = expandedCategories.has(categoryKey);
+        {/* Drag Handle - Linear style: subtle, reveals on hover */}
+        <div
+          className="flex-shrink-0 h-[1px] relative group cursor-row-resize"
+          onMouseDown={handleDragStart}
+        >
+          {/* Base line */}
+          <div className="absolute inset-x-0 top-0 h-[1px] bg-[hsl(0,0%,12%)]" />
+          {/* Hover indicator - wider hit area */}
+          <div className="absolute inset-x-0 -top-1 h-[9px] flex items-center justify-center">
+            {/* Visual handle that appears on hover */}
+            <div className="w-8 h-[3px] rounded-full bg-[hsl(0,0%,20%)] opacity-0 group-hover:opacity-100 transition-opacity duration-100" />
+          </div>
+        </div>
 
-          return (
-            <div key={categoryKey} className="mt-1">
-              {/* Category Header */}
-              <button
-                onClick={() => toggleCategory(categoryKey)}
-                className="flex items-center gap-1.5 w-full px-1.5 py-1.5 text-[hsl(0,0%,50%)] hover:text-[hsl(0,0%,65%)] transition-colors"
-              >
-                <ChevronDown
-                  className={cn(
-                    "w-3 h-3 transition-transform duration-100",
-                    !isExpanded && "-rotate-90"
-                  )}
-                />
-                <span className="text-[11px] font-medium tracking-wide">
-                  {config.label}
-                </span>
-              </button>
+        {/* Bottom: Primitives Section */}
+        <div
+          className="flex-1 overflow-hidden flex flex-col min-h-0"
+          style={{ height: `${(1 - splitRatio) * 100}%` }}
+        >
+          <div className="flex-1 overflow-y-auto px-1.5">
+            {hasPrimitiveResults ? (
+              sortedCategories.map((categoryKey) => {
+                const config = categoryConfig[categoryKey];
+                const categoryPrimitives = groupedPrimitives[categoryKey] || [];
+                const isExpanded = expandedCategories.has(categoryKey);
 
-              {/* Primitives List */}
-              {isExpanded && (
-                <div className="ml-1">
-                  {categoryPrimitives.map((primitive) => {
-                    const IconComponent = iconMap[primitive.icon] || Database;
-
-                    return (
-                      <div
-                        key={primitive.id}
-                        draggable
-                        onDragStart={(e) => onPrimitiveDragStart(e, primitive.id)}
+                return (
+                  <div key={categoryKey} className="mt-1">
+                    {/* Category Header */}
+                    <button
+                      onClick={() => toggleCategory(categoryKey)}
+                      className="flex items-center gap-1.5 w-full px-1.5 py-1.5 text-[hsl(0,0%,50%)] hover:text-[hsl(0,0%,65%)] transition-colors duration-100"
+                    >
+                      <ChevronDown
                         className={cn(
-                          "group/item flex items-center gap-2 px-1.5 py-[5px] rounded",
-                          "cursor-grab active:cursor-grabbing",
-                          "hover:bg-[hsl(0,0%,10%)] transition-colors duration-100"
+                          "w-3 h-3 transition-transform duration-100",
+                          !isExpanded && "-rotate-90"
                         )}
-                      >
-                        <IconComponent className="w-4 h-4 text-[hsl(0,0%,45%)] flex-shrink-0" />
-                        <span className="text-[13px] text-[hsl(0,0%,75%)] truncate">
-                          {primitive.name}
-                        </span>
+                      />
+                      <span className="text-[11px] font-medium tracking-wide">
+                        {config.label}
+                      </span>
+                      <span className="text-[9px] text-[hsl(0,0%,30%)] ml-auto tabular-nums">
+                        {categoryPrimitives.length}
+                      </span>
+                    </button>
+
+                    {/* Primitives List */}
+                    {isExpanded && (
+                      <div className="ml-1">
+                        {categoryPrimitives.map((primitive) => {
+                          const IconComponent = iconMap[primitive.icon] || Database;
+
+                          return (
+                            <div
+                              key={primitive.id}
+                              draggable
+                              onDragStart={(e) => onPrimitiveDragStart(e, primitive.id)}
+                              className={cn(
+                                "group/item flex items-center gap-2 px-1.5 py-[5px] rounded",
+                                "cursor-grab active:cursor-grabbing",
+                                "hover:bg-[hsl(0,0%,10%)] transition-colors duration-100"
+                              )}
+                            >
+                              <IconComponent className="w-4 h-4 text-[hsl(0,0%,45%)] flex-shrink-0" />
+                              <span className="text-[13px] text-[hsl(0,0%,75%)] truncate">
+                                {primitive.name}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
+                    )}
+                  </div>
+                );
+              })
+            ) : (
+              <div className="flex items-center justify-center h-full text-[11px] text-[hsl(0,0%,35%)]">
+                No primitives found
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Footer hint - very subtle */}
-      <div className="px-3 py-2">
+      <div className="px-3 py-2 flex-shrink-0">
         <p className="text-[10px] text-[hsl(0,0%,30%)] text-center">
           Drag to canvas
         </p>

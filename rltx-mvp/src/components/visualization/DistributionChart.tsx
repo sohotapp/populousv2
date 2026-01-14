@@ -75,9 +75,9 @@ export function DistributionChart({
   const stats = distribution.stats;
 
   return (
-    <div className="bg-zinc-900 rounded-lg p-4">
+    <div className="bg-[hsl(0,0%,10%)] rounded-md p-4">
       {title && (
-        <h4 className="text-sm font-medium text-zinc-200 mb-2">{title}</h4>
+        <h4 className="text-sm font-medium text-[hsl(0,0%,93%)] mb-2">{title}</h4>
       )}
 
       <ResponsiveContainer width="100%" height={height}>
@@ -90,23 +90,23 @@ export function DistributionChart({
           </defs>
           <XAxis
             dataKey="x"
-            tick={{ fill: "#a1a1aa", fontSize: 10 }}
+            tick={{ fill: "hsl(0,0%,50%)", fontSize: 10 }}
             tickFormatter={(v) => typeof v === "number" ? v.toFixed(1) : v}
-            axisLine={{ stroke: "#3f3f46" }}
-            tickLine={{ stroke: "#3f3f46" }}
+            axisLine={{ stroke: "hsl(0,0%,15%)" }}
+            tickLine={{ stroke: "hsl(0,0%,15%)" }}
           />
           <YAxis
-            tick={{ fill: "#a1a1aa", fontSize: 10 }}
+            tick={{ fill: "hsl(0,0%,50%)", fontSize: 10 }}
             tickFormatter={(v) => v.toFixed(2)}
-            axisLine={{ stroke: "#3f3f46" }}
-            tickLine={{ stroke: "#3f3f46" }}
+            axisLine={{ stroke: "hsl(0,0%,15%)" }}
+            tickLine={{ stroke: "hsl(0,0%,15%)" }}
             width={40}
           />
           <Tooltip
             contentStyle={{
-              backgroundColor: "#18181b",
-              border: "1px solid #3f3f46",
-              borderRadius: "8px",
+              backgroundColor: "hsl(0,0%,10%)",
+              border: "1px solid hsl(0,0%,15%)",
+              borderRadius: "6px",
               fontSize: "12px",
             }}
             labelFormatter={(label) => `Value: ${Number(label).toFixed(2)}`}
@@ -116,21 +116,21 @@ export function DistributionChart({
             <>
               <ReferenceLine
                 x={stats.p5}
-                stroke="#ef4444"
+                stroke="hsl(0,70%,55%)"
                 strokeDasharray="3 3"
-                label={{ value: "P5", fill: "#ef4444", fontSize: 10 }}
+                label={{ value: "P5", fill: "hsl(0,70%,55%)", fontSize: 10 }}
               />
               <ReferenceLine
                 x={stats.mean}
-                stroke="#22c55e"
+                stroke="hsl(142,70%,45%)"
                 strokeWidth={2}
-                label={{ value: "Mean", fill: "#22c55e", fontSize: 10 }}
+                label={{ value: "Mean", fill: "hsl(142,70%,45%)", fontSize: 10 }}
               />
               <ReferenceLine
                 x={stats.p95}
-                stroke="#ef4444"
+                stroke="hsl(0,70%,55%)"
                 strokeDasharray="3 3"
-                label={{ value: "P95", fill: "#ef4444", fontSize: 10 }}
+                label={{ value: "P95", fill: "hsl(0,70%,55%)", fontSize: 10 }}
               />
             </>
           )}
@@ -159,15 +159,15 @@ export function DistributionChart({
 function StatBox({
   label,
   value,
-  color = "text-zinc-300",
+  color = "text-[hsl(0,0%,70%)]",
 }: {
   label: string;
   value: number;
   color?: string;
 }) {
   return (
-    <div className="bg-zinc-800 rounded px-2 py-1">
-      <div className="text-zinc-500 text-[10px]">{label}</div>
+    <div className="bg-[hsl(0,0%,12%)] rounded px-2 py-1">
+      <div className="text-[hsl(0,0%,50%)] text-[10px]">{label}</div>
       <div className={`font-mono ${color}`}>
         {typeof value === "number" ? value.toFixed(2) : value}
       </div>
@@ -247,17 +247,17 @@ export function ConfidenceDisplay({
   const meanPosition = ((mean - lower) / range) * 100;
 
   return (
-    <div className="bg-zinc-900 rounded-lg p-4">
+    <div className="bg-[hsl(0,0%,10%)] rounded-md p-4">
       <div className="flex justify-between items-center mb-2">
-        <span className="text-sm text-zinc-400">{label}</span>
-        <span className="text-xs text-zinc-500">{confidence}% CI</span>
+        <span className="text-sm text-[hsl(0,0%,50%)]">{label}</span>
+        <span className="text-xs text-[hsl(0,0%,50%)]">{confidence}% CI</span>
       </div>
 
-      <div className="text-2xl font-mono font-bold text-white mb-3">
+      <div className="text-2xl font-mono font-bold text-[hsl(0,0%,93%)] mb-3">
         {mean.toFixed(2)}
       </div>
 
-      <div className="relative h-8 bg-zinc-800 rounded overflow-hidden">
+      <div className="relative h-8 bg-[hsl(0,0%,12%)] rounded overflow-hidden">
         {/* Confidence interval bar */}
         <div
           className="absolute h-full bg-foreground/20"
@@ -266,15 +266,15 @@ export function ConfidenceDisplay({
 
         {/* Mean marker */}
         <div
-          className="absolute top-0 bottom-0 w-0.5 bg-green-500"
+          className="absolute top-0 bottom-0 w-0.5 bg-[hsl(142,70%,45%)]"
           style={{ left: `${meanPosition}%` }}
         />
 
         {/* Labels */}
-        <div className="absolute bottom-0 left-0 text-[10px] text-zinc-400 px-1">
+        <div className="absolute bottom-0 left-0 text-[10px] text-[hsl(0,0%,50%)] px-1">
           {lower.toFixed(2)}
         </div>
-        <div className="absolute bottom-0 right-0 text-[10px] text-zinc-400 px-1">
+        <div className="absolute bottom-0 right-0 text-[10px] text-[hsl(0,0%,50%)] px-1">
           {upper.toFixed(2)}
         </div>
       </div>
@@ -297,9 +297,9 @@ export function DistributionComparison({
   title,
 }: DistributionComparisonProps) {
   return (
-    <div className="bg-zinc-900 rounded-lg p-4">
+    <div className="bg-[hsl(0,0%,10%)] rounded-md p-4">
       {title && (
-        <h4 className="text-sm font-medium text-zinc-200 mb-4">{title}</h4>
+        <h4 className="text-sm font-medium text-[hsl(0,0%,93%)] mb-4">{title}</h4>
       )}
 
       <div className="space-y-4">
@@ -310,9 +310,9 @@ export function DistributionComparison({
                 className="w-3 h-3 rounded-full"
                 style={{ backgroundColor: d.color }}
               />
-              <span className="text-sm text-zinc-300">{d.name}</span>
+              <span className="text-sm text-[hsl(0,0%,70%)]">{d.name}</span>
               {d.distribution.stats && (
-                <span className="text-xs text-zinc-500 ml-auto">
+                <span className="text-xs text-[hsl(0,0%,50%)] ml-auto">
                   Mean: {d.distribution.stats.mean.toFixed(2)}
                 </span>
               )}

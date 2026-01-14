@@ -80,14 +80,14 @@ export function ExecutionHistory({
   if (loading) {
     return (
       <div className="p-4 flex items-center justify-center">
-        <Loader2 className="w-5 h-5 animate-spin text-zinc-500" />
+        <Loader2 className="w-5 h-5 animate-spin text-[hsl(0,0%,50%)]" />
       </div>
     );
   }
 
   if (executions.length === 0) {
     return (
-      <div className="p-6 text-center text-zinc-500">
+      <div className="p-6 text-center text-[hsl(0,0%,50%)]">
         <BarChart3 className="w-8 h-8 mx-auto mb-2 opacity-50" />
         <p className="text-sm">No execution history</p>
         <p className="text-xs mt-1">Run the workflow to see results here</p>
@@ -97,7 +97,7 @@ export function ExecutionHistory({
 
   return (
     <>
-      <div className="divide-y divide-zinc-800">
+      <div className="divide-y divide-[hsl(0,0%,15%)]">
         {executions.map((execution) => (
           <ExecutionRow
             key={execution.id}
@@ -153,17 +153,17 @@ function ExecutionRow({
   const config = statusConfig[execution.status];
 
   return (
-    <div className="p-3 hover:bg-zinc-900/50 transition-colors">
+    <div className="p-3 hover:bg-[hsl(0,0%,10%)]/50 transition-colors">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className={`p-1.5 rounded ${config.bg} ${config.color}`}>
             {config.icon}
           </div>
           <div>
-            <div className="text-sm text-zinc-200">
+            <div className="text-sm text-[hsl(0,0%,93%)]">
               {execution.results?.recommendation?.action || "Execution"}
             </div>
-            <div className="text-xs text-zinc-500 flex items-center gap-2">
+            <div className="text-xs text-[hsl(0,0%,50%)] flex items-center gap-2">
               <Clock className="w-3 h-3" />
               {format(new Date(execution.startedAt), "MMM d, h:mm a")}
               {execution.durationMs && (
@@ -175,7 +175,7 @@ function ExecutionRow({
 
         <div className="flex items-center gap-1">
           {execution.results?.recommendation && (
-            <div className="text-xs text-zinc-400 mr-2">
+            <div className="text-xs text-[hsl(0,0%,50%)] mr-2">
               {(execution.results.recommendation.confidence * 100).toFixed(0)}%
               confidence
             </div>
@@ -227,25 +227,25 @@ function ExecutionDetails({ execution }: { execution: ExecutionRecord }) {
 
       {/* Recommendation */}
       {execution.results?.recommendation && (
-        <div className="bg-zinc-900 rounded-lg p-4">
-          <h4 className="font-medium text-zinc-200 mb-3">Recommendation</h4>
-          <div className="text-lg font-semibold text-white mb-2">
+        <div className="bg-[hsl(0,0%,10%)] rounded-md p-4">
+          <h4 className="font-medium text-[hsl(0,0%,93%)] mb-3">Recommendation</h4>
+          <div className="text-lg font-semibold text-[hsl(0,0%,93%)] mb-2">
             {execution.results.recommendation.action}
           </div>
-          <p className="text-sm text-zinc-400 mb-3">
+          <p className="text-sm text-[hsl(0,0%,50%)] mb-3">
             {execution.results.recommendation.reasoning}
           </p>
           <div className="flex items-center gap-2">
-            <span className="text-zinc-500 text-sm">Confidence:</span>
-            <div className="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden">
+            <span className="text-[hsl(0,0%,50%)] text-sm">Confidence:</span>
+            <div className="flex-1 h-2 bg-[hsl(0,0%,12%)] rounded-full overflow-hidden">
               <div
-                className="h-full bg-green-500"
+                className="h-full bg-[hsl(142,70%,45%)]"
                 style={{
                   width: `${execution.results.recommendation.confidence * 100}%`,
                 }}
               />
             </div>
-            <span className="text-zinc-300 text-sm">
+            <span className="text-[hsl(0,0%,70%)] text-sm">
               {(execution.results.recommendation.confidence * 100).toFixed(0)}%
             </span>
           </div>
@@ -256,7 +256,7 @@ function ExecutionDetails({ execution }: { execution: ExecutionRecord }) {
       {execution.results?.distributions &&
         Object.keys(execution.results.distributions).length > 0 && (
           <div>
-            <h4 className="font-medium text-zinc-200 mb-3">Distributions</h4>
+            <h4 className="font-medium text-[hsl(0,0%,93%)] mb-3">Distributions</h4>
             <div className="space-y-3">
               {Object.entries(execution.results.distributions).map(
                 ([key, dist]) => (
@@ -273,7 +273,7 @@ function ExecutionDetails({ execution }: { execution: ExecutionRecord }) {
 
       {/* Error */}
       {execution.error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+        <div className="bg-[hsl(0,70%,55%)]/10 border border-[hsl(0,70%,55%)]/30 rounded-md p-4">
           <h4 className="font-medium text-red-400 mb-2">Error</h4>
           <p className="text-sm text-red-300">{execution.error}</p>
         </div>
@@ -285,15 +285,15 @@ function ExecutionDetails({ execution }: { execution: ExecutionRecord }) {
 function InfoCard({
   label,
   value,
-  className = "text-zinc-200",
+  className = "text-[hsl(0,0%,93%)]",
 }: {
   label: string;
   value: string;
   className?: string;
 }) {
   return (
-    <div className="bg-zinc-900 rounded-lg p-3">
-      <div className="text-xs text-zinc-500 mb-1">{label}</div>
+    <div className="bg-[hsl(0,0%,10%)] rounded-md p-3">
+      <div className="text-xs text-[hsl(0,0%,50%)] mb-1">{label}</div>
       <div className={`text-sm font-medium ${className}`}>{value}</div>
     </div>
   );

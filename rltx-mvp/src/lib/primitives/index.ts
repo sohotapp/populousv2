@@ -126,6 +126,40 @@ export const primitives: Record<string, Primitive> = {
     estimatedTime: { p50: 3000, p95: 8000 },
   },
 
+  "data.population.sample": {
+    id: "data.population.sample",
+    name: "Population Sample",
+    description: "Sample agents from a demographic population using stratified sampling",
+    category: "data",
+    icon: "Users",
+    color: "#3b82f6",
+    inputs: [],
+    outputs: [
+      { id: "agents", name: "Agent Profiles", type: "array", required: true },
+      { id: "archetypes", name: "Archetypes", type: "array", required: false },
+      { id: "metadata", name: "Sampling Metadata", type: "object", required: true },
+    ],
+    config: {
+      type: "object",
+      properties: {
+        populationId: {
+          type: "string",
+          title: "Population",
+          enum: ["us_adults", "us_voters", "us_consumers", "enterprise_decision_makers"],
+          default: "us_adults",
+        },
+        sampleSize: { type: "number", title: "Sample Size", default: 1000, minimum: 10, maximum: 10000 },
+        useArchetypes: { type: "boolean", title: "Use Archetypes", default: true },
+        archetypeCount: { type: "number", title: "Archetype Count", default: 50, minimum: 5, maximum: 200 },
+        stratifyBy: { type: "string", title: "Stratify By", default: "age,income,region" },
+      },
+      required: ["populationId", "sampleSize"],
+    },
+    executor: "compute",
+    estimatedCost: { dollars: 0.01 },
+    estimatedTime: { p50: 500, p95: 2000 },
+  },
+
   // ========== REASON PRIMITIVES ==========
   "reason.analyze": {
     id: "reason.analyze",
@@ -357,6 +391,52 @@ export const primitives: Record<string, Primitive> = {
     executor: "compute",
     estimatedCost: { dollars: 8.00 },
     estimatedTime: { p50: 60000, p95: 180000 },
+  },
+
+  "sim.abm": {
+    id: "sim.abm",
+    name: "Agent-Based Model",
+    description: "Simulate opinion/adoption dynamics through agent interactions over time",
+    category: "simulate",
+    icon: "Network",
+    color: "#f59e0b",
+    inputs: [
+      { id: "agents", name: "Agent Population", type: "array", required: true },
+      { id: "initialState", name: "Initial State", type: "object", required: false },
+    ],
+    outputs: [
+      { id: "timeseries", name: "State Over Time", type: "array", required: true },
+      { id: "finalState", name: "Final State", type: "object", required: true },
+      { id: "tippingPoints", name: "Tipping Points", type: "array", required: false },
+    ],
+    config: {
+      type: "object",
+      properties: {
+        timeSteps: { type: "number", title: "Time Steps", default: 52, minimum: 1, maximum: 365 },
+        interactionModel: {
+          type: "string",
+          title: "Interaction Model",
+          enum: ["bass_diffusion", "threshold", "social_influence", "complex_contagion"],
+          default: "bass_diffusion",
+        },
+        seedPercentage: { type: "number", title: "Initial Adoption %", default: 2, minimum: 0.1, maximum: 50 },
+        networkTopology: {
+          type: "string",
+          title: "Network Topology",
+          enum: ["random", "small_world", "scale_free", "spatial"],
+          default: "small_world",
+        },
+        updateRule: {
+          type: "string",
+          title: "Update Rule",
+          enum: ["synchronous", "asynchronous", "random_sequential"],
+          default: "asynchronous",
+        },
+      },
+    },
+    executor: "compute",
+    estimatedCost: { dollars: 5.00 },
+    estimatedTime: { p50: 30000, p95: 90000 },
   },
 
   "branch.counterfactual": {
@@ -655,6 +735,199 @@ export const primitives: Record<string, Primitive> = {
     executor: "internal",
     estimatedCost: { dollars: 0 },
     estimatedTime: { p50: 10, p95: 50 },
+  },
+
+  // ========== DEFENSE PRIMITIVES ==========
+  "defense.threat-assessment": {
+    id: "defense.threat-assessment",
+    name: "Threat Assessment",
+    description: "Analyze adversarial capabilities, intentions, and likely courses of action",
+    category: "reason",
+    icon: "AlertTriangle",
+    color: "#ef4444",
+    inputs: [
+      { id: "threat-data", name: "Threat Data", type: "object", required: true },
+      { id: "context", name: "Strategic Context", type: "object", required: false },
+    ],
+    outputs: [
+      { id: "assessment", name: "Threat Assessment", type: "object", required: true },
+      { id: "indicators", name: "Warning Indicators", type: "array", required: true },
+    ],
+    config: {
+      type: "object",
+      properties: {
+        threatLevel: {
+          type: "string",
+          title: "Initial Threat Level",
+          enum: ["low", "moderate", "elevated", "high", "critical"],
+          default: "moderate",
+        },
+        focus: {
+          type: "string",
+          title: "Assessment Focus",
+          enum: ["capabilities", "intentions", "timeline", "vulnerabilities"],
+          default: "capabilities",
+        },
+        domain: {
+          type: "string",
+          title: "Threat Domain",
+          enum: ["military", "cyber", "economic", "political", "hybrid"],
+          default: "military",
+        },
+        timeHorizon: {
+          type: "string",
+          title: "Time Horizon",
+          enum: ["immediate", "near-term", "mid-term", "long-term"],
+          default: "near-term",
+        },
+      },
+    },
+    executor: "llm",
+    estimatedCost: { dollars: 3.00 },
+    estimatedTime: { p50: 20000, p95: 50000 },
+  },
+
+  "defense.escalation-ladder": {
+    id: "defense.escalation-ladder",
+    name: "Escalation Ladder",
+    description: "Model escalation dynamics and de-escalation pathways between strategic actors",
+    category: "simulate",
+    icon: "TrendingUp",
+    color: "#f59e0b",
+    inputs: [
+      { id: "baseline", name: "Baseline Scenario", type: "object", required: true },
+      { id: "actors", name: "Strategic Actors", type: "array", required: true },
+    ],
+    outputs: [
+      { id: "escalation-paths", name: "Escalation Pathways", type: "array", required: true },
+      { id: "risk-assessment", name: "Escalation Risk", type: "object", required: true },
+      { id: "off-ramps", name: "De-escalation Options", type: "array", required: true },
+    ],
+    config: {
+      type: "object",
+      properties: {
+        maxLevels: {
+          type: "number",
+          title: "Max Escalation Levels",
+          default: 5,
+          minimum: 2,
+          maximum: 10,
+        },
+        domain: {
+          type: "string",
+          title: "Escalation Domain",
+          enum: ["military", "cyber", "economic", "information", "hybrid"],
+          default: "military",
+        },
+        includeNuclear: {
+          type: "boolean",
+          title: "Include Nuclear Scenarios",
+          default: false,
+        },
+        thresholdAnalysis: {
+          type: "boolean",
+          title: "Analyze Red Lines",
+          default: true,
+        },
+      },
+    },
+    executor: "compute",
+    estimatedCost: { dollars: 8.00 },
+    estimatedTime: { p50: 60000, p95: 150000 },
+  },
+
+  "defense.red-team": {
+    id: "defense.red-team",
+    name: "Red Team Analysis",
+    description: "Adversarial perspective analysis to identify vulnerabilities and blind spots",
+    category: "reason",
+    icon: "Eye",
+    color: "#ef4444",
+    inputs: [
+      { id: "plan", name: "Blue Force Plan", type: "object", required: true },
+      { id: "context", name: "Operational Context", type: "object", required: false },
+    ],
+    outputs: [
+      { id: "vulnerabilities", name: "Identified Vulnerabilities", type: "array", required: true },
+      { id: "counter-moves", name: "Adversary Counter-Moves", type: "array", required: true },
+      { id: "recommendations", name: "Hardening Recommendations", type: "object", required: true },
+    ],
+    config: {
+      type: "object",
+      properties: {
+        adversaryProfile: {
+          type: "string",
+          title: "Adversary Profile",
+          enum: ["peer_competitor", "regional_power", "non_state_actor", "cyber_threat", "insider"],
+          default: "peer_competitor",
+        },
+        assumedCapabilities: {
+          type: "string",
+          title: "Assumed Capabilities",
+          enum: ["limited", "moderate", "advanced", "state_of_art"],
+          default: "advanced",
+        },
+        aggressiveness: {
+          type: "string",
+          title: "Adversary Aggressiveness",
+          enum: ["cautious", "opportunistic", "aggressive", "desperate"],
+          default: "opportunistic",
+        },
+      },
+    },
+    executor: "llm",
+    estimatedCost: { dollars: 4.00 },
+    estimatedTime: { p50: 25000, p95: 60000 },
+  },
+
+  "defense.course-of-action": {
+    id: "defense.course-of-action",
+    name: "Course of Action",
+    description: "Generate and evaluate military/strategic courses of action",
+    category: "output",
+    icon: "Target",
+    color: "#06b6d4",
+    inputs: [
+      { id: "analysis", name: "Situation Analysis", type: "object", required: true },
+      { id: "constraints", name: "Constraints & Rules", type: "object", required: false },
+      { id: "objectives", name: "Strategic Objectives", type: "array", required: true },
+    ],
+    outputs: [
+      { id: "courses", name: "Courses of Action", type: "array", required: true },
+      { id: "recommendation", name: "Recommended COA", type: "object", required: true },
+      { id: "comparison", name: "COA Comparison Matrix", type: "object", required: true },
+    ],
+    config: {
+      type: "object",
+      properties: {
+        maxCourses: {
+          type: "number",
+          title: "Number of COAs",
+          default: 3,
+          minimum: 2,
+          maximum: 5,
+        },
+        evaluationCriteria: {
+          type: "string",
+          title: "Evaluation Criteria",
+          default: "feasibility,acceptability,suitability,distinguishability",
+        },
+        includeRisks: {
+          type: "boolean",
+          title: "Include Risk Assessment",
+          default: true,
+        },
+        format: {
+          type: "string",
+          title: "Output Format",
+          enum: ["military", "policy", "executive"],
+          default: "military",
+        },
+      },
+    },
+    executor: "llm",
+    estimatedCost: { dollars: 5.00 },
+    estimatedTime: { p50: 30000, p95: 75000 },
   },
 };
 

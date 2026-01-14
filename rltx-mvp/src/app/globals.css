@@ -4,41 +4,62 @@
 
 @layer base {
   :root {
-    /* Linear-inspired dark theme - default */
-    --background: 0 0% 4%;
-    --foreground: 0 0% 98%;
+    /* Linear Design System - Aligned with design.md */
 
-    --card: 0 0% 7%;
-    --card-foreground: 0 0% 98%;
+    /* Backgrounds (design.md lines 61-65) */
+    --background: 0 0% 7%;           /* bg-base: #121212 */
+    --foreground: 0 0% 93%;          /* text-primary */
 
-    --popover: 0 0% 9%;
-    --popover-foreground: 0 0% 98%;
+    --card: 0 0% 7%;                 /* Same as base per design.md */
+    --card-foreground: 0 0% 93%;
 
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 4%;
+    --popover: 0 0% 10%;             /* bg-surface for dropdowns */
+    --popover-foreground: 0 0% 93%;
 
-    --secondary: 0 0% 12%;
-    --secondary-foreground: 0 0% 98%;
+    --primary: 0 0% 93%;             /* Light on dark buttons */
+    --primary-foreground: 0 0% 7%;
 
-    --muted: 0 0% 12%;
-    --muted-foreground: 0 0% 55%;
+    --secondary: 0 0% 9%;            /* bg-elevated */
+    --secondary-foreground: 0 0% 93%;
 
-    --accent: 0 0% 15%;
-    --accent-foreground: 0 0% 98%;
+    --muted: 0 0% 10%;               /* bg-surface */
+    --muted-foreground: 0 0% 50%;    /* text-tertiary */
 
-    --destructive: 0 72% 51%;
+    --accent: 0 0% 12%;              /* bg-hover */
+    --accent-foreground: 0 0% 93%;
+
+    --destructive: 0 70% 55%;        /* status-error per design.md line 92 */
     --destructive-foreground: 0 0% 98%;
 
-    --border: 0 0% 14%;
-    --input: 0 0% 14%;
-    --ring: 0 0% 40%;
+    /* Borders (design.md lines 68-71) */
+    --border: 0 0% 12%;              /* border-subtle */
+    --input: 0 0% 8%;                /* Input bg per design.md line 426 */
+    --ring: 0 0% 25%;                /* border-focus */
 
-    /* Surface elevations */
-    --surface: 0 0% 7%;
-    --surface-elevated: 0 0% 10%;
-    --surface-overlay: 0 0% 12%;
+    /* Surface elevations (design.md lines 61-65) */
+    --surface: 0 0% 10%;             /* bg-surface */
+    --surface-elevated: 0 0% 9%;     /* bg-elevated */
+    --surface-overlay: 0 0% 12%;     /* bg-hover */
 
-    --radius: 0.5rem;
+    /* Text colors (design.md lines 74-78) */
+    --text-primary: 0 0% 93%;
+    --text-secondary: 0 0% 70%;
+    --text-tertiary: 0 0% 50%;
+    --text-quaternary: 0 0% 35%;
+    --text-disabled: 0 0% 25%;
+
+    /* Icon colors (design.md lines 81-83) */
+    --icon-primary: 0 0% 70%;
+    --icon-secondary: 0 0% 45%;
+    --icon-tertiary: 0 0% 30%;
+
+    /* Status colors (design.md lines 90-93) */
+    --status-success: 142 70% 45%;
+    --status-warning: 38 90% 50%;
+    --status-error: 0 70% 55%;
+    --status-info: 210 70% 55%;
+
+    --radius: 0.375rem;              /* 6px for cards per design.md */
   }
 }
 
@@ -68,7 +89,7 @@
 
 /* ReactFlow customizations for dark theme */
 .react-flow__background {
-  background-color: hsl(0 0% 4%) !important;
+  background-color: hsl(0 0% 7%) !important;
 }
 
 .react-flow__node {

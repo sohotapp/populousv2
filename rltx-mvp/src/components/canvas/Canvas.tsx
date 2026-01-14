@@ -252,21 +252,21 @@ function CanvasInner({ workflowId, initialGraph }: CanvasInnerProps) {
         multiSelectionKeyCode="Shift"
         defaultEdgeOptions={{
           animated: true,
-          style: { stroke: "#6366f1", strokeWidth: 2 },
+          style: { stroke: "hsl(0,0%,30%)", strokeWidth: 2 },
         }}
         proOptions={{ hideAttribution: true }}
       >
-        <Background gap={16} size={1} color="hsl(0,0%,18%)" />
-        <Controls className="!bg-[hsl(0,0%,9%)] !border-[hsl(0,0%,18%)] !rounded-lg !shadow-lg [&>button]:!bg-transparent [&>button]:!border-[hsl(0,0%,18%)] [&>button]:!text-[hsl(0,0%,60%)] [&>button:hover]:!bg-[hsl(0,0%,14%)] [&>button:hover]:!text-[hsl(0,0%,95%)]" />
+        <Background gap={16} size={1} color="hsl(0,0%,15%)" />
+        <Controls className="!bg-[hsl(0,0%,9%)] !border-[hsl(0,0%,15%)] !rounded-md [&>button]:!bg-transparent [&>button]:!border-[hsl(0,0%,15%)] [&>button]:!text-[hsl(0,0%,55%)] [&>button:hover]:!bg-[hsl(0,0%,12%)] [&>button:hover]:!text-[hsl(0,0%,93%)]" />
         <MiniMap
           nodeColor={(node) => {
             const state = (node.data as { state?: string })?.state;
-            if (state === "running") return "#3b82f6";
-            if (state === "completed") return "#22c55e";
-            if (state === "failed") return "#ef4444";
-            return "#6b7280";
+            if (state === "running") return "hsl(210,70%,55%)";
+            if (state === "completed") return "hsl(142,70%,45%)";
+            if (state === "failed") return "hsl(0,70%,55%)";
+            return "hsl(0,0%,35%)";
           }}
-          className="!bg-[hsl(0,0%,9%)] !border-[hsl(0,0%,18%)] !rounded-lg"
+          className="!bg-[hsl(0,0%,9%)] !border-[hsl(0,0%,15%)] !rounded-md"
           maskColor="rgba(0, 0, 0, 0.6)"
         />
 

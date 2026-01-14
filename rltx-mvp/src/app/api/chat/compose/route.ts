@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { primitives, primitiveCategories } from "@/lib/primitives";
+import { primitives } from "@/lib/primitives";
 import { nanoid } from "nanoid";
+import {
+  CANONICAL_PATTERNS,
+  detectPattern,
+  generatePatternPromptSection,
+  generateFewShotExamples,
+} from "@/lib/composition";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-// Build system prompt with all primitives
+// Build system prompt with primitives and canonical patterns
 function buildSystemPrompt() {
   const primitivesByCategory: Record<string, string[]> = {};
 
@@ -24,39 +30,56 @@ function buildSystemPrompt() {
     .map(([cat, prims]) => `${cat.toUpperCase()}:\n${prims.join("\n")}`)
     .join("\n\n");
 
-  return `You are RLTX, an expert AI workflow composer for analytical decision-making. You help users build sophisticated multi-agent simulation workflows.
+  const patternSection = generatePatternPromptSection();
+  const fewShotExamples = generateFewShotExamples();
+
+  return `You are RLTX, an expert AI workflow composer for multi-agent behavioral simulation.
+You help analysts and decision-makers build sophisticated simulation workflows to predict human behavior.
+
+CORE CAPABILITY:
+RLTX simulates how populations of people (consumers, voters, adversaries) would respond to scenarios
+using LLM-powered agents. Each agent is given a realistic persona and asked to respond authentically.
+
+${patternSection}
 
 AVAILABLE PRIMITIVES BY CATEGORY:
 
 ${categorizedPrimitives}
 
 WORKFLOW DESIGN PRINCIPLES:
-1. DATA nodes fetch and prepare inputs
+1. DATA nodes fetch and prepare inputs (populations, context)
 2. REASON nodes analyze and synthesize using Claude
-3. SIMULATE nodes run Monte Carlo, scenarios, game theory
+3. SIMULATE nodes run agent-based simulations:
+   - sim.montecarlo.oasis: Survey population of agents
+   - game.equilibrium: Model strategic actors (competitors, adversaries)
+   - sim.abm: Model opinion/adoption dynamics over time
 4. HUMAN nodes collect input or approvals
 5. OUTPUT nodes generate recommendations and reports
 6. CONTROL nodes handle branching, loops, and merging
 
-When composing workflows:
-- Start with data gathering (data.* primitives)
-- Use reason.analyze for initial understanding
-- Add simulations for uncertainty quantification
-- Include reason.critique for pre-mortem analysis
-- End with output.recommendation for actionable results
-- Use control.merge when combining multiple analysis branches
+PATTERN-BASED COMPOSITION:
+When a user's request matches a canonical pattern:
+1. Identify which pattern applies based on trigger phrases
+2. Use the pattern's template structure
+3. Parameterize it with user-specific context
+4. Include the "pattern" field in your response
+
+${fewShotExamples}
 
 RESPONSE FORMAT (JSON only):
 {
-  "message": "Brief explanation of the workflow and what it does",
+  "message": "Brief explanation of what the simulation will reveal",
+  "pattern": "pattern_id_if_applicable",
   "workflow": {
     "name": "Descriptive workflow name",
     "nodes": [
       {"primitiveId": "data.input", "label": "Define Context", "config": {"dataType": "json"}},
-      {"primitiveId": "reason.analyze", "label": "Initial Analysis", "config": {"focus": "key drivers"}}
+      {"primitiveId": "data.population.sample", "label": "Sample Population", "config": {"populationId": "us_consumers", "sampleSize": 1000}},
+      {"primitiveId": "sim.montecarlo.oasis", "label": "Agent Survey", "config": {"rollouts": 100, "question": "..."}}
     ],
     "edges": [
-      {"source": 0, "target": 1}
+      {"source": 0, "target": 1},
+      {"source": 1, "target": 2}
     ]
   }
 }
@@ -66,8 +89,10 @@ IMPORTANT:
 - Include relevant config values for each primitive
 - Create logical data flow - every non-source node needs incoming edge
 - Use parallel branches when appropriate (multiple edges from same source)
-- Typical workflows have 4-10 nodes
-- Always include uncertainty quantification for important decisions`;
+- Behavioral simulations should use data.population.sample + sim.montecarlo.oasis
+- Strategic/adversarial simulations should use game.equilibrium
+- Include segment analysis for consumer surveys
+- Always specify populationId and sampleSize for population sampling`;
 }
 
 const SYSTEM_PROMPT = buildSystemPrompt();
@@ -187,184 +212,261 @@ function transformWorkflow(workflow: {
   };
 }
 
-// Mock response for demo without API key
+// Mock response for demo without API key - uses canonical patterns
 function getMockResponse(message: string) {
   const lowerMessage = message.toLowerCase();
 
-  // Market expansion / growth analysis
-  if (lowerMessage.includes("market") || lowerMessage.includes("expand") || lowerMessage.includes("growth")) {
+  // Pattern 1: Consumer Survey - "would customers", "what percent", "how do people"
+  if (
+    lowerMessage.includes("would customer") ||
+    lowerMessage.includes("what percent") ||
+    lowerMessage.includes("how many would") ||
+    lowerMessage.includes("consumer") ||
+    lowerMessage.includes("would user") ||
+    lowerMessage.includes("customer willingness") ||
+    lowerMessage.includes("adoption rate")
+  ) {
     return {
       message:
-        "I've composed a comprehensive market expansion analysis workflow. It gathers market data, analyzes the opportunity across multiple dimensions, runs Monte Carlo simulations for financial projections, evaluates risks through pre-mortem analysis, and generates an actionable recommendation with confidence intervals.",
+        "I'll simulate how your target population would respond to this question using agent-based modeling. Each agent represents a realistic persona and will respond authentically based on their demographics and psychology.",
+      pattern: "consumer_survey",
       workflow: transformWorkflow({
-        name: "Market Expansion Analysis",
+        name: "Consumer Survey Simulation",
         nodes: [
-          { primitiveId: "data.input", label: "Define Expansion Context", config: { dataType: "json" } },
-          { primitiveId: "data.api.fetch", label: "Fetch Market Data", config: { method: "GET" } },
-          { primitiveId: "reason.analyze", label: "Market Opportunity Analysis", config: { focus: "market size, competition, barriers to entry" } },
-          { primitiveId: "sim.scenario", label: "Scenario Planning", config: { count: 4, includeWorstCase: true } },
-          { primitiveId: "sim.montecarlo.oasis", label: "Financial Projections", config: { rollouts: 1000, populationSize: 500 } },
-          { primitiveId: "reason.critique", label: "Pre-Mortem Analysis", config: { perspective: "skeptic" } },
-          { primitiveId: "control.merge", label: "Consolidate Analysis", config: { strategy: "object" } },
-          { primitiveId: "output.recommendation", label: "Generate Recommendation", config: { style: "bluf", includeConfidence: true } },
+          { primitiveId: "data.input", label: "Survey Context", config: { dataType: "json" } },
+          { primitiveId: "data.population.sample", label: "Sample Population", config: { populationId: "us_consumers", sampleSize: 1000, useArchetypes: true } },
+          { primitiveId: "sim.montecarlo.oasis", label: "Survey Simulation", config: { rollouts: 100, question: message, responseFormat: "yes_no_maybe" } },
+          { primitiveId: "reason.analyze", label: "Segment Analysis", config: { focus: "demographic segments, willingness drivers, barriers" } },
+          { primitiveId: "output.report", label: "Survey Results", config: { format: "detailed", includeSegments: true } },
+        ],
+        edges: [
+          { source: 0, target: 1 },
+          { source: 1, target: 2 },
+          { source: 2, target: 3 },
+          { source: 3, target: 4 },
+        ],
+      }),
+    };
+  }
+
+  // Pattern 2: Change Impact - "what if we", "impact of", "effect of"
+  if (
+    lowerMessage.includes("what if we") ||
+    lowerMessage.includes("impact of") ||
+    lowerMessage.includes("effect of") ||
+    lowerMessage.includes("if we increase") ||
+    lowerMessage.includes("if we decrease") ||
+    lowerMessage.includes("price elasticity") ||
+    lowerMessage.includes("sensitivity")
+  ) {
+    return {
+      message:
+        "I'll analyze how this change would affect behavior across different scenarios. The simulation will test multiple variations and compare outcomes to identify tipping points and segment-specific impacts.",
+      pattern: "change_impact",
+      workflow: transformWorkflow({
+        name: "Change Impact Analysis",
+        nodes: [
+          { primitiveId: "data.input", label: "Change Context", config: { dataType: "json" } },
+          { primitiveId: "data.population.sample", label: "Sample Population", config: { populationId: "us_consumers", sampleSize: 1000, useArchetypes: true } },
+          { primitiveId: "sim.scenario", label: "Generate Scenarios", config: { count: 5, baseVariable: "change_percent", range: [-30, -15, 0, 15, 30] } },
+          { primitiveId: "branch.counterfactual", label: "Parallel Simulations", config: { parallelExecution: true } },
+          { primitiveId: "sim.montecarlo.oasis", label: "Behavior Simulation", config: { rollouts: 100, question: message } },
+          { primitiveId: "control.merge", label: "Combine Results", config: { strategy: "object" } },
+          { primitiveId: "reason.compare", label: "Impact Comparison", config: { criteria: "adoption rate, revenue impact, segment shifts" } },
+          { primitiveId: "output.chart", label: "Impact Visualization", config: { chartType: "sensitivity", interactive: true } },
         ],
         edges: [
           { source: 0, target: 1 },
           { source: 0, target: 2 },
+          { source: 1, target: 3 },
+          { source: 2, target: 3 },
+          { source: 3, target: 4 },
+          { source: 4, target: 5 },
+          { source: 5, target: 6 },
+          { source: 6, target: 7 },
+        ],
+      }),
+    };
+  }
+
+  // Pattern 3: Competitive Response - "competitor", "how will they respond"
+  if (
+    lowerMessage.includes("competitor") ||
+    lowerMessage.includes("how will they respond") ||
+    lowerMessage.includes("competitive") ||
+    lowerMessage.includes("rival") ||
+    lowerMessage.includes("pricing war") ||
+    lowerMessage.includes("market share")
+  ) {
+    return {
+      message:
+        "I'll model competitive dynamics using game theory to predict how rivals will respond, then simulate how customers will react to the resulting market conditions. Each competitor is modeled as a strategic actor with their own objectives.",
+      pattern: "competitive_response",
+      workflow: transformWorkflow({
+        name: "Competitive Response Analysis",
+        nodes: [
+          { primitiveId: "data.input", label: "Competitive Context", config: { dataType: "json" } },
+          { primitiveId: "game.equilibrium", label: "Competitor Response Model", config: { equilibriumType: "nash", useAgentNegotiation: true } },
+          { primitiveId: "sim.scenario", label: "Market Scenarios", config: { count: 4, includeWorstCase: true } },
+          { primitiveId: "data.population.sample", label: "Sample Customers", config: { populationId: "us_consumers", sampleSize: 500 } },
+          { primitiveId: "branch.counterfactual", label: "Scenario Branches", config: { parallelExecution: true } },
+          { primitiveId: "sim.montecarlo.oasis", label: "Customer Choice Simulation", config: { rollouts: 100, question: "Which provider would you choose?" } },
+          { primitiveId: "control.merge", label: "Consolidate Outcomes", config: { strategy: "object" } },
+          { primitiveId: "reason.analyze", label: "Strategic Analysis", config: { focus: "optimal timing, risk factors, competitive moats" } },
+          { primitiveId: "output.recommendation", label: "Strategic Recommendation", config: { style: "bluf", includeConfidence: true } },
+        ],
+        edges: [
+          { source: 0, target: 1 },
+          { source: 0, target: 3 },
+          { source: 1, target: 2 },
+          { source: 2, target: 4 },
+          { source: 3, target: 4 },
+          { source: 4, target: 5 },
+          { source: 5, target: 6 },
+          { source: 6, target: 7 },
+          { source: 7, target: 8 },
+        ],
+      }),
+    };
+  }
+
+  // Pattern 4: Wargame - "adversary", "nation state", "escalation"
+  if (
+    lowerMessage.includes("adversary") ||
+    lowerMessage.includes("nation") ||
+    lowerMessage.includes("escalation") ||
+    lowerMessage.includes("wargame") ||
+    lowerMessage.includes("geopolitical") ||
+    lowerMessage.includes("military") ||
+    lowerMessage.includes("deterrence") ||
+    lowerMessage.includes("conflict")
+  ) {
+    return {
+      message:
+        "I'll run a strategic wargame simulation modeling adversarial dynamics between actors. Each actor is given realistic objectives and constraints, and the simulation finds equilibrium strategies through iterated best-response.",
+      pattern: "wargame",
+      workflow: transformWorkflow({
+        name: "Strategic Wargame Simulation",
+        nodes: [
+          { primitiveId: "data.input", label: "Strategic Context", config: { dataType: "json" } },
+          { primitiveId: "game.equilibrium", label: "Strategic Simulation", config: { equilibriumType: "nash", domain: "defense", maxRounds: 5, useAgentNegotiation: true } },
+          { primitiveId: "reason.analyze", label: "Equilibrium Analysis", config: { focus: "stability, escalation risk, off-ramps" } },
+          { primitiveId: "sim.scenario", label: "Escalation Scenarios", config: { count: 4, includeWorstCase: true } },
+          { primitiveId: "reason.critique", label: "Red Team Analysis", config: { perspective: "adversary" } },
+          { primitiveId: "control.merge", label: "Consolidate Analysis", config: { strategy: "object" } },
+          { primitiveId: "output.report", label: "Strategic Assessment", config: { format: "detailed" } },
+        ],
+        edges: [
+          { source: 0, target: 1 },
+          { source: 1, target: 2 },
+          { source: 1, target: 3 },
+          { source: 2, target: 5 },
+          { source: 3, target: 4 },
+          { source: 4, target: 5 },
+          { source: 5, target: 6 },
+        ],
+      }),
+    };
+  }
+
+  // Pattern 5: Opinion Dynamics - "spread", "viral", "adoption over time"
+  if (
+    lowerMessage.includes("spread") ||
+    lowerMessage.includes("viral") ||
+    lowerMessage.includes("adoption over time") ||
+    lowerMessage.includes("diffusion") ||
+    lowerMessage.includes("network effect") ||
+    lowerMessage.includes("word of mouth")
+  ) {
+    return {
+      message:
+        "I'll simulate how this spreads through a population over time using agent-based modeling. The simulation models social network effects and identifies tipping points and key influencer segments.",
+      pattern: "opinion_dynamics",
+      workflow: transformWorkflow({
+        name: "Opinion Dynamics Simulation",
+        nodes: [
+          { primitiveId: "data.input", label: "Diffusion Context", config: { dataType: "json" } },
+          { primitiveId: "data.population.sample", label: "Sample Network", config: { populationId: "us_adults", sampleSize: 5000, includeNetworkStructure: true } },
+          { primitiveId: "sim.abm", label: "Agent-Based Model", config: { timeSteps: 52, interactionModel: "bass_diffusion", seedPercentage: 2 } },
+          { primitiveId: "reason.analyze", label: "Diffusion Analysis", config: { focus: "adoption curve, tipping points, influencer segments" } },
+          { primitiveId: "sim.sensitivity", label: "Factor Sensitivity", config: { range: 50 } },
+          { primitiveId: "output.chart", label: "Adoption Curve", config: { chartType: "line", interactive: true } },
+          { primitiveId: "output.report", label: "Diffusion Report", config: { format: "detailed" } },
+        ],
+        edges: [
+          { source: 0, target: 1 },
           { source: 1, target: 2 },
           { source: 2, target: 3 },
           { source: 2, target: 4 },
           { source: 3, target: 6 },
           { source: 4, target: 5 },
           { source: 5, target: 6 },
-          { source: 6, target: 7 },
         ],
       }),
     };
   }
 
-  // Vendor/provider comparison
-  if (lowerMessage.includes("compare") || lowerMessage.includes("vendor") || lowerMessage.includes("provider") || lowerMessage.includes("choose")) {
+  // Pattern 6: Counterfactual - "compare a vs b", "which option"
+  if (
+    lowerMessage.includes("compare") ||
+    lowerMessage.includes("which option") ||
+    lowerMessage.includes("a/b") ||
+    lowerMessage.includes("versus") ||
+    lowerMessage.includes(" vs ") ||
+    lowerMessage.includes("trade-off") ||
+    lowerMessage.includes("which is better")
+  ) {
     return {
       message:
-        "I've built a multi-criteria vendor comparison workflow. It defines your requirements, gathers data on each option in parallel, performs systematic comparison, simulates long-term outcomes, and generates a ranked recommendation.",
+        "I'll compare these options by simulating how the population would respond to each. Each option is tested against the same representative sample to ensure fair comparison.",
+      pattern: "counterfactual",
       workflow: transformWorkflow({
-        name: "Vendor Comparison Analysis",
+        name: "Counterfactual Comparison",
         nodes: [
-          { primitiveId: "data.input", label: "Define Requirements", config: { dataType: "json" } },
-          { primitiveId: "data.api.fetch", label: "Vendor A Data", config: { method: "GET" } },
-          { primitiveId: "data.api.fetch", label: "Vendor B Data", config: { method: "GET" } },
-          { primitiveId: "reason.analyze", label: "Feature Analysis", config: { focus: "capabilities, limitations, pricing" } },
-          { primitiveId: "reason.compare", label: "Systematic Comparison", config: { criteria: "cost, features, support, scalability, security" } },
-          { primitiveId: "sim.sensitivity", label: "Cost Sensitivity Analysis", config: { range: 25 } },
+          { primitiveId: "data.input", label: "Options Context", config: { dataType: "json" } },
+          { primitiveId: "data.population.sample", label: "Sample Population", config: { populationId: "us_consumers", sampleSize: 1000, useArchetypes: true } },
+          { primitiveId: "branch.counterfactual", label: "Option Branches", config: { parallelExecution: true } },
+          { primitiveId: "sim.montecarlo.oasis", label: "Option A Simulation", config: { rollouts: 100 } },
+          { primitiveId: "sim.montecarlo.oasis", label: "Option B Simulation", config: { rollouts: 100 } },
+          { primitiveId: "control.merge", label: "Combine Results", config: { strategy: "object" } },
+          { primitiveId: "reason.compare", label: "Head-to-Head Analysis", config: { criteria: "adoption, revenue, satisfaction" } },
           { primitiveId: "reason.steelman", label: "Best Case for Runner-Up", config: {} },
-          { primitiveId: "output.report", label: "Comparison Report", config: { format: "executive" } },
+          { primitiveId: "output.recommendation", label: "Final Recommendation", config: { style: "bluf", includeConfidence: true } },
         ],
         edges: [
           { source: 0, target: 1 },
-          { source: 0, target: 2 },
-          { source: 1, target: 3 },
+          { source: 1, target: 2 },
           { source: 2, target: 3 },
-          { source: 3, target: 4 },
+          { source: 2, target: 4 },
+          { source: 3, target: 5 },
           { source: 4, target: 5 },
-          { source: 4, target: 6 },
-          { source: 5, target: 7 },
+          { source: 5, target: 6 },
           { source: 6, target: 7 },
+          { source: 7, target: 8 },
         ],
       }),
     };
   }
 
-  // Investment / financial decision
-  if (lowerMessage.includes("invest") || lowerMessage.includes("roi") || lowerMessage.includes("financial") || lowerMessage.includes("budget")) {
-    return {
-      message:
-        "I've composed an investment analysis workflow with Monte Carlo simulation for uncertainty quantification. It analyzes the investment thesis, simulates financial outcomes, performs sensitivity analysis to identify key drivers, and generates a recommendation with confidence intervals.",
-      workflow: transformWorkflow({
-        name: "Investment Analysis",
-        nodes: [
-          { primitiveId: "data.input", label: "Investment Parameters", config: { dataType: "json" } },
-          { primitiveId: "reason.analyze", label: "Investment Thesis Analysis", config: { focus: "value drivers, risks, timing" } },
-          { primitiveId: "sim.montecarlo.oasis", label: "Return Distribution", config: { rollouts: 2000, populationSize: 1000 } },
-          { primitiveId: "sim.sensitivity", label: "Key Driver Analysis", config: { range: 30 } },
-          { primitiveId: "causal.explain", label: "Causal Analysis", config: { method: "llm-reasoning", includeTornadoChart: true } },
-          { primitiveId: "uncertainty.aggregate", label: "Aggregate Uncertainty", config: { separateEpistemic: true } },
-          { primitiveId: "output.chart", label: "Distribution Visualization", config: { chartType: "tornado", interactive: true } },
-          { primitiveId: "output.recommendation", label: "Investment Recommendation", config: { style: "detailed", includeConfidence: true } },
-        ],
-        edges: [
-          { source: 0, target: 1 },
-          { source: 1, target: 2 },
-          { source: 2, target: 3 },
-          { source: 2, target: 4 },
-          { source: 3, target: 5 },
-          { source: 4, target: 5 },
-          { source: 5, target: 6 },
-          { source: 5, target: 7 },
-        ],
-      }),
-    };
-  }
-
-  // Risk assessment
-  if (lowerMessage.includes("risk") || lowerMessage.includes("threat") || lowerMessage.includes("security")) {
-    return {
-      message:
-        "I've built a comprehensive risk assessment workflow. It decomposes risks into sub-categories, analyzes each dimension, runs adversarial scenarios, and generates a risk matrix with mitigation recommendations.",
-      workflow: transformWorkflow({
-        name: "Risk Assessment",
-        nodes: [
-          { primitiveId: "data.input", label: "Risk Context", config: { dataType: "json" } },
-          { primitiveId: "decompose.question", label: "Risk Decomposition", config: { maxDepth: 2 } },
-          { primitiveId: "reason.analyze", label: "Risk Analysis", config: { focus: "likelihood, impact, velocity" } },
-          { primitiveId: "sim.scenario", label: "Risk Scenarios", config: { count: 5, includeWorstCase: true } },
-          { primitiveId: "reason.critique", label: "Adversarial Analysis", config: { perspective: "competitor" } },
-          { primitiveId: "control.merge", label: "Consolidate Risks", config: { strategy: "array" } },
-          { primitiveId: "output.report", label: "Risk Report", config: { format: "detailed" } },
-        ],
-        edges: [
-          { source: 0, target: 1 },
-          { source: 1, target: 2 },
-          { source: 2, target: 3 },
-          { source: 2, target: 4 },
-          { source: 3, target: 5 },
-          { source: 4, target: 5 },
-          { source: 5, target: 6 },
-        ],
-      }),
-    };
-  }
-
-  // Strategy / planning
-  if (lowerMessage.includes("strateg") || lowerMessage.includes("plan") || lowerMessage.includes("roadmap")) {
-    return {
-      message:
-        "I've composed a strategic planning workflow with scenario analysis and game theory. It analyzes the strategic landscape, models competitor responses, evaluates multiple scenarios, and generates a strategic recommendation.",
-      workflow: transformWorkflow({
-        name: "Strategic Planning",
-        nodes: [
-          { primitiveId: "data.input", label: "Strategic Context", config: { dataType: "json" } },
-          { primitiveId: "reason.analyze", label: "Landscape Analysis", config: { focus: "market position, capabilities, opportunities" } },
-          { primitiveId: "game.equilibrium", label: "Competitive Dynamics", config: { equilibriumType: "nash", useAgentNegotiation: true } },
-          { primitiveId: "sim.scenario", label: "Strategic Scenarios", config: { count: 4, includeWorstCase: true } },
-          { primitiveId: "branch.counterfactual", label: "Strategy Branches", config: { parallelExecution: true } },
-          { primitiveId: "reason.compare", label: "Strategy Comparison", config: { criteria: "risk-adjusted return, feasibility, time to value" } },
-          { primitiveId: "output.recommendation", label: "Strategic Recommendation", config: { style: "bluf", includeConfidence: true } },
-        ],
-        edges: [
-          { source: 0, target: 1 },
-          { source: 1, target: 2 },
-          { source: 1, target: 3 },
-          { source: 2, target: 4 },
-          { source: 3, target: 4 },
-          { source: 4, target: 5 },
-          { source: 5, target: 6 },
-        ],
-      }),
-    };
-  }
-
-  // Default - general decision analysis
+  // Default - Consumer Survey pattern for general questions
   return {
     message:
-      "I've composed a general decision analysis workflow. It breaks down your question, analyzes it from multiple perspectives, identifies risks through pre-mortem analysis, and generates an actionable recommendation.",
+      "I'll simulate how people would respond to this question using agent-based modeling. Each agent represents a realistic persona with demographics and psychology.",
+    pattern: "consumer_survey",
     workflow: transformWorkflow({
-      name: "Decision Analysis",
+      name: "Behavioral Simulation",
       nodes: [
-        { primitiveId: "data.input", label: "Define Decision Context", config: { dataType: "json" } },
-        { primitiveId: "decompose.question", label: "Break Down Question", config: { maxDepth: 2 } },
-        { primitiveId: "reason.analyze", label: "Multi-Dimensional Analysis", config: { focus: "pros, cons, second-order effects" } },
-        { primitiveId: "reason.critique", label: "Pre-Mortem Review", config: { perspective: "skeptic" } },
-        { primitiveId: "sim.scenario", label: "Outcome Scenarios", config: { count: 3, includeWorstCase: true } },
-        { primitiveId: "output.recommendation", label: "Final Recommendation", config: { style: "bluf", includeConfidence: true } },
+        { primitiveId: "data.input", label: "Context", config: { dataType: "json" } },
+        { primitiveId: "data.population.sample", label: "Sample Population", config: { populationId: "us_adults", sampleSize: 1000, useArchetypes: true } },
+        { primitiveId: "sim.montecarlo.oasis", label: "Agent Survey", config: { rollouts: 100, question: message } },
+        { primitiveId: "reason.analyze", label: "Response Analysis", config: { focus: "key drivers, segment differences" } },
+        { primitiveId: "output.report", label: "Results", config: { format: "detailed" } },
       ],
       edges: [
         { source: 0, target: 1 },
         { source: 1, target: 2 },
         { source: 2, target: 3 },
-        { source: 2, target: 4 },
-        { source: 3, target: 5 },
-        { source: 4, target: 5 },
+        { source: 3, target: 4 },
       ],
     }),
   };

@@ -52,7 +52,7 @@ interface AnalyticsState {
   lastUpdated: string | null;
 
   // Actions
-  fetchMetrics: () => Promise<void>;
+  fetchMetrics: (period?: number) => Promise<void>;
   setMetrics: (metrics: AnalyticsMetrics) => void;
   updateRecentExecution: (execution: RecentExecution) => void;
   addRecentExecution: (execution: RecentExecution) => void;
@@ -155,14 +155,17 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
   error: null,
   lastUpdated: null,
 
-  fetchMetrics: async () => {
+  fetchMetrics: async (period: number = 14) => {
     set({ isLoading: true, error: null });
 
     try {
-      // In production, this would fetch from /api/analytics
-      // For now, use mock data
-      await new Promise((resolve) => setTimeout(resolve, 500)); // Simulate network delay
-      const metrics = generateMockMetrics();
+      const response = await fetch(`/api/analytics?period=${period}`);
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch analytics: ${response.status}`);
+      }
+
+      const metrics: AnalyticsMetrics = await response.json();
 
       set({
         metrics,
@@ -170,6 +173,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
         lastUpdated: new Date().toISOString(),
       });
     } catch (error) {
+      console.error("Analytics fetch error:", error);
       set({
         error: error instanceof Error ? error.message : "Failed to fetch analytics",
         isLoading: false,

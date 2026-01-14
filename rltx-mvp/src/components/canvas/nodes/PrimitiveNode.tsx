@@ -144,12 +144,13 @@ function PrimitiveNodeComponent({ id, data, selected }: NodeProps) {
   const inputs = primitive?.inputs || [];
   const outputs = primitive?.outputs || [];
 
+  // design.md: border-default 15%, status colors for running/completed/failed
   const stateStyles: Record<NodeState, { border: string; glow: string }> = {
-    idle: { border: "border-[hsl(0,0%,18%)]", glow: "" },
-    pending: { border: "border-[hsl(0,0%,22%)]", glow: "" },
-    running: { border: "border-blue-500/50", glow: "shadow-[0_0_20px_rgba(59,130,246,0.15)]" },
-    completed: { border: "border-emerald-500/40", glow: "" },
-    failed: { border: "border-red-500/40", glow: "" },
+    idle: { border: "border-[hsl(0,0%,15%)]", glow: "" },
+    pending: { border: "border-[hsl(0,0%,20%)]", glow: "" },
+    running: { border: "border-[hsl(210,70%,55%)]/50", glow: "shadow-[0_0_16px_rgba(59,130,246,0.1)]" },
+    completed: { border: "border-[hsl(142,70%,45%)]/40", glow: "" },
+    failed: { border: "border-[hsl(0,70%,55%)]/40", glow: "" },
   };
 
   const style = stateStyles[nodeData.state];
@@ -160,7 +161,7 @@ function PrimitiveNodeComponent({ id, data, selected }: NodeProps) {
     return (
       <div
         className={cn(
-          "group relative rounded-lg border transition-all duration-200",
+          "group relative rounded-md border transition-all duration-100",
           "bg-[hsl(0,0%,9%)] w-12 h-12",
           style.border,
           style.glow,
@@ -171,7 +172,7 @@ function PrimitiveNodeComponent({ id, data, selected }: NodeProps) {
         <Handle
           type="target"
           position={Position.Top}
-          className="!w-2 !h-2 !rounded-full !border-2 !border-[hsl(0,0%,9%)] !-top-1 !bg-[hsl(0,0%,40%)]"
+          className="!w-2 !h-2 !rounded-full !border-2 !border-[hsl(0,0%,9%)] !-top-1 !bg-[hsl(0,0%,30%)]"
         />
 
         {/* Icon + State */}
@@ -190,7 +191,7 @@ function PrimitiveNodeComponent({ id, data, selected }: NodeProps) {
         <Handle
           type="source"
           position={Position.Bottom}
-          className="!w-2 !h-2 !rounded-full !border-2 !border-[hsl(0,0%,9%)] !-bottom-1 !bg-[hsl(0,0%,40%)]"
+          className="!w-2 !h-2 !rounded-full !border-2 !border-[hsl(0,0%,9%)] !-bottom-1 !bg-[hsl(0,0%,30%)]"
         />
       </div>
     );
@@ -201,7 +202,7 @@ function PrimitiveNodeComponent({ id, data, selected }: NodeProps) {
     return (
       <div
         className={cn(
-          "group relative rounded-lg border transition-all duration-200",
+          "group relative rounded-md border transition-all duration-100",
           "bg-[hsl(0,0%,9%)] min-w-[140px] max-w-[160px]",
           style.border,
           style.glow,
@@ -212,7 +213,7 @@ function PrimitiveNodeComponent({ id, data, selected }: NodeProps) {
         <Handle
           type="target"
           position={Position.Top}
-          className="!w-2 !h-2 !rounded-full !border-2 !border-[hsl(0,0%,9%)] !-top-1 !bg-[hsl(0,0%,40%)]"
+          className="!w-2 !h-2 !rounded-full !border-2 !border-[hsl(0,0%,9%)] !-top-1 !bg-[hsl(0,0%,30%)]"
         />
 
         {/* Content */}
@@ -232,7 +233,7 @@ function PrimitiveNodeComponent({ id, data, selected }: NodeProps) {
         <Handle
           type="source"
           position={Position.Bottom}
-          className="!w-2 !h-2 !rounded-full !border-2 !border-[hsl(0,0%,9%)] !-bottom-1 !bg-[hsl(0,0%,40%)]"
+          className="!w-2 !h-2 !rounded-full !border-2 !border-[hsl(0,0%,9%)] !-bottom-1 !bg-[hsl(0,0%,30%)]"
         />
       </div>
     );
@@ -242,7 +243,7 @@ function PrimitiveNodeComponent({ id, data, selected }: NodeProps) {
   return (
     <div
       className={cn(
-        "group relative rounded-lg border transition-all duration-200",
+        "group relative rounded-md border transition-all duration-100",
         "bg-[hsl(0,0%,9%)] min-w-[200px] max-w-[240px]",
         style.border,
         style.glow,
@@ -272,7 +273,7 @@ function PrimitiveNodeComponent({ id, data, selected }: NodeProps) {
           position={Position.Top}
           className={cn(
             "!w-2 !h-2 !rounded-full !border-2 !border-[hsl(0,0%,9%)] !-top-1 transition-all",
-            "!bg-[hsl(0,0%,40%)] group-hover:!bg-[hsl(0,0%,55%)]"
+            "!bg-[hsl(0,0%,30%)] group-hover:!bg-[hsl(0,0%,70%)]"
           )}
         />
       )}
@@ -366,7 +367,7 @@ function PrimitiveNodeComponent({ id, data, selected }: NodeProps) {
           position={Position.Bottom}
           className={cn(
             "!w-2 !h-2 !rounded-full !border-2 !border-[hsl(0,0%,9%)] !-bottom-1 transition-all",
-            "!bg-[hsl(0,0%,40%)] group-hover:!bg-[hsl(0,0%,55%)]"
+            "!bg-[hsl(0,0%,30%)] group-hover:!bg-[hsl(0,0%,70%)]"
           )}
         />
       )}

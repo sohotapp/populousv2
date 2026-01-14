@@ -132,7 +132,8 @@ export function CanvasToolbar({ workflowId }: CanvasToolbarProps) {
   };
 
   return (
-    <div className="flex items-center gap-1 bg-[hsl(0,0%,9%)]/95 backdrop-blur-sm rounded-lg border border-[hsl(0,0%,18%)] shadow-lg px-1.5 py-1.5">
+    // design.md: Minimal shadows - toolbars use border, not shadow-lg
+    <div className="flex items-center gap-1 bg-[hsl(0,0%,9%)]/95 backdrop-blur-sm rounded-md border border-[hsl(0,0%,15%)] px-1.5 py-1.5">
       {/* Undo/Redo */}
       <Button
         variant="ghost"
@@ -156,7 +157,7 @@ export function CanvasToolbar({ workflowId }: CanvasToolbarProps) {
         <Redo2 className="w-3.5 h-3.5" />
       </Button>
 
-      <div className="w-px h-4 bg-[hsl(0,0%,18%)] mx-0.5" />
+      <div className="w-px h-4 bg-[hsl(0,0%,15%)] mx-0.5" />
 
       {/* Copy/Paste */}
       <Button
@@ -181,7 +182,7 @@ export function CanvasToolbar({ workflowId }: CanvasToolbarProps) {
         <ClipboardPaste className="w-3.5 h-3.5" />
       </Button>
 
-      <div className="w-px h-4 bg-[hsl(0,0%,18%)] mx-0.5" />
+      <div className="w-px h-4 bg-[hsl(0,0%,15%)] mx-0.5" />
 
       {/* Run/Stop */}
       {isExecuting ? (
@@ -207,7 +208,7 @@ export function CanvasToolbar({ workflowId }: CanvasToolbarProps) {
         </Button>
       )}
 
-      <div className="w-px h-4 bg-[hsl(0,0%,18%)] mx-0.5" />
+      <div className="w-px h-4 bg-[hsl(0,0%,15%)] mx-0.5" />
 
       {/* Reset */}
       <Button
@@ -233,7 +234,7 @@ export function CanvasToolbar({ workflowId }: CanvasToolbarProps) {
         <Trash2 className="w-3.5 h-3.5" />
       </Button>
 
-      <div className="w-px h-4 bg-[hsl(0,0%,18%)] mx-0.5" />
+      <div className="w-px h-4 bg-[hsl(0,0%,15%)] mx-0.5" />
 
       {/* Node count */}
       <div className="text-xs text-[hsl(0,0%,45%)] px-2 tabular-nums">

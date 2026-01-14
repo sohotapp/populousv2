@@ -31,3 +31,4 @@ tsconfig.tsbuildinfo
 
 # Misc
 *.tgz
+.next/

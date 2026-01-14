@@ -309,6 +309,247 @@ export const BASE_POPULATIONS: Record<string, PopulationDefinition> = {
       },
     },
   },
+
+  enterprise_it_buyers: {
+    id: "enterprise_it_buyers",
+    name: "Enterprise IT Buyers",
+    description: "IT decision makers for technology purchasing decisions",
+    totalSize: 8_000_000,
+    distributions: {
+      age: {
+        "25-34": 0.18,
+        "35-44": 0.35,
+        "45-54": 0.30,
+        "55-64": 0.14,
+        "65+": 0.03,
+      },
+      gender: {
+        male: 0.72,
+        female: 0.28,
+      },
+      income: {
+        "100k-150k": 0.22,
+        "150k-200k": 0.32,
+        "200k-300k": 0.28,
+        over_300k: 0.18,
+      },
+      education: {
+        some_college: 0.08,
+        bachelors: 0.42,
+        graduate: 0.50,
+      },
+      location: {
+        urban: 0.52,
+        suburban: 0.45,
+        rural: 0.03,
+      },
+      region: {
+        northeast: 0.22,
+        midwest: 0.16,
+        south: 0.34,
+        west: 0.28,
+      },
+      employment: {
+        employed_full_time: 0.94,
+        self_employed: 0.06,
+      },
+    },
+    traits: {
+      riskTolerance: {
+        very_low: 0.12,
+        low: 0.28,
+        moderate: 0.38,
+        high: 0.18,
+        very_high: 0.04,
+      },
+      techAdoption: {
+        laggard: 0.02,
+        late_majority: 0.15,
+        early_majority: 0.38,
+        early_adopter: 0.35,
+        innovator: 0.10,
+      },
+    },
+  },
+
+  enterprise_finance_buyers: {
+    id: "enterprise_finance_buyers",
+    name: "Enterprise Finance Buyers",
+    description: "Finance and accounting decision makers for B2B purchasing",
+    totalSize: 5_000_000,
+    distributions: {
+      age: {
+        "25-34": 0.12,
+        "35-44": 0.28,
+        "45-54": 0.35,
+        "55-64": 0.20,
+        "65+": 0.05,
+      },
+      gender: {
+        male: 0.58,
+        female: 0.42,
+      },
+      income: {
+        "100k-150k": 0.18,
+        "150k-200k": 0.28,
+        "200k-300k": 0.32,
+        over_300k: 0.22,
+      },
+      education: {
+        bachelors: 0.38,
+        graduate: 0.62,
+      },
+      location: {
+        urban: 0.48,
+        suburban: 0.49,
+        rural: 0.03,
+      },
+      region: {
+        northeast: 0.28,
+        midwest: 0.18,
+        south: 0.30,
+        west: 0.24,
+      },
+      employment: {
+        employed_full_time: 0.96,
+        self_employed: 0.04,
+      },
+    },
+    traits: {
+      riskTolerance: {
+        very_low: 0.18,
+        low: 0.35,
+        moderate: 0.32,
+        high: 0.12,
+        very_high: 0.03,
+      },
+      pricesSensitivity: {
+        very_low: 0.05,
+        low: 0.15,
+        moderate: 0.35,
+        high: 0.32,
+        very_high: 0.13,
+      },
+    },
+  },
+
+  saas_decision_makers: {
+    id: "saas_decision_makers",
+    name: "SaaS Decision Makers",
+    description: "Buyers of software-as-a-service products across industries",
+    totalSize: 12_000_000,
+    distributions: {
+      age: {
+        "25-34": 0.25,
+        "35-44": 0.38,
+        "45-54": 0.25,
+        "55-64": 0.10,
+        "65+": 0.02,
+      },
+      gender: {
+        male: 0.58,
+        female: 0.42,
+      },
+      income: {
+        "75k-100k": 0.12,
+        "100k-150k": 0.28,
+        "150k-200k": 0.30,
+        "200k-300k": 0.20,
+        over_300k: 0.10,
+      },
+      education: {
+        some_college: 0.12,
+        bachelors: 0.48,
+        graduate: 0.40,
+      },
+      location: {
+        urban: 0.50,
+        suburban: 0.46,
+        rural: 0.04,
+      },
+      region: {
+        northeast: 0.20,
+        midwest: 0.18,
+        south: 0.32,
+        west: 0.30,
+      },
+      employment: {
+        employed_full_time: 0.92,
+        self_employed: 0.08,
+      },
+    },
+    traits: {
+      techAdoption: {
+        laggard: 0.03,
+        late_majority: 0.18,
+        early_majority: 0.42,
+        early_adopter: 0.30,
+        innovator: 0.07,
+      },
+      brandLoyalty: {
+        very_low: 0.15,
+        low: 0.28,
+        moderate: 0.32,
+        high: 0.20,
+        very_high: 0.05,
+      },
+    },
+  },
+
+  defense_stakeholders: {
+    id: "defense_stakeholders",
+    name: "Defense & Security Stakeholders",
+    description: "Government and defense sector decision makers for strategic simulations",
+    totalSize: 500_000,
+    distributions: {
+      age: {
+        "25-34": 0.10,
+        "35-44": 0.25,
+        "45-54": 0.35,
+        "55-64": 0.25,
+        "65+": 0.05,
+      },
+      gender: {
+        male: 0.75,
+        female: 0.25,
+      },
+      income: {
+        "100k-150k": 0.25,
+        "150k-200k": 0.35,
+        "200k-300k": 0.28,
+        over_300k: 0.12,
+      },
+      education: {
+        bachelors: 0.30,
+        graduate: 0.70,
+      },
+      location: {
+        urban: 0.55,
+        suburban: 0.42,
+        rural: 0.03,
+      },
+      region: {
+        northeast: 0.35,
+        midwest: 0.12,
+        south: 0.38,
+        west: 0.15,
+      },
+      employment: {
+        employed_full_time: 0.88,
+        retired: 0.10,
+        self_employed: 0.02,
+      },
+    },
+    traits: {
+      riskTolerance: {
+        very_low: 0.22,
+        low: 0.35,
+        moderate: 0.28,
+        high: 0.12,
+        very_high: 0.03,
+      },
+    },
+  },
 };
 
 // Helper to get population by ID with fallback

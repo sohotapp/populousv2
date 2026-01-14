@@ -61,7 +61,8 @@ export function ExecutionPanel() {
   return (
     <div className="h-full flex flex-col bg-[hsl(0,0%,7%)]">
       {/* Header - seamless, no border */}
-      <div className="flex items-center justify-between px-3 py-2.5 flex-shrink-0">
+      {/* design.md: panel padding 12px (space-3) */}
+      <div className="flex items-center justify-between px-3 py-3 flex-shrink-0">
         <span className="text-[hsl(0,0%,65%)] text-[13px] font-medium">
           Execution
         </span>
@@ -96,7 +97,7 @@ export function ExecutionPanel() {
             {/* Progress bar - subtle */}
             <div className="h-1 bg-[hsl(0,0%,12%)] rounded-full overflow-hidden">
               <div
-                className="h-full bg-[hsl(0,0%,50%)] transition-all duration-300"
+                className="h-full bg-[hsl(0,0%,50%)] transition-all duration-100"
                 style={{ width: `${progressPercent}%` }}
               />
             </div>
@@ -266,6 +267,7 @@ export function ExecutionPanel() {
 }
 
 function StatusIndicator({ status }: { status: string }) {
+  // design.md status colors: info hsl(210,70%,55%), success hsl(142,70%,45%), warning hsl(38,90%,50%), error hsl(0,70%,55%)
   const config: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
     idle: {
       color: "text-[hsl(0,0%,45%)]",
@@ -273,22 +275,22 @@ function StatusIndicator({ status }: { status: string }) {
       label: "Idle",
     },
     running: {
-      color: "text-[hsl(210,60%,60%)]",
+      color: "text-[hsl(210,70%,55%)]",
       icon: <Loader2 className="w-3 h-3 animate-spin" />,
       label: "Running",
     },
     paused: {
-      color: "text-[hsl(40,60%,55%)]",
+      color: "text-[hsl(38,90%,50%)]",
       icon: <Pause className="w-3 h-3" />,
       label: "Paused",
     },
     completed: {
-      color: "text-[hsl(140,45%,55%)]",
+      color: "text-[hsl(142,70%,45%)]",
       icon: <Check className="w-3 h-3" />,
       label: "Completed",
     },
     failed: {
-      color: "text-[hsl(0,50%,55%)]",
+      color: "text-[hsl(0,70%,55%)]",
       icon: <X className="w-3 h-3" />,
       label: "Failed",
     },
@@ -317,12 +319,13 @@ function NodeStatusRow({
     timing?: { durationMs?: number };
   };
 }) {
+  // design.md status colors: info hsl(210,70%,55%), success hsl(142,70%,45%), error hsl(0,70%,55%)
   const stateConfig: Record<string, { color: string; dotColor: string }> = {
     idle: { color: "text-[hsl(0,0%,50%)]", dotColor: "bg-[hsl(0,0%,35%)]" },
     pending: { color: "text-[hsl(0,0%,50%)]", dotColor: "bg-[hsl(0,0%,35%)]" },
-    running: { color: "text-[hsl(210,60%,60%)]", dotColor: "bg-[hsl(210,60%,60%)]" },
-    completed: { color: "text-[hsl(140,45%,55%)]", dotColor: "bg-[hsl(140,45%,55%)]" },
-    failed: { color: "text-[hsl(0,50%,55%)]", dotColor: "bg-[hsl(0,50%,55%)]" },
+    running: { color: "text-[hsl(210,70%,55%)]", dotColor: "bg-[hsl(210,70%,55%)]" },
+    completed: { color: "text-[hsl(142,70%,45%)]", dotColor: "bg-[hsl(142,70%,45%)]" },
+    failed: { color: "text-[hsl(0,70%,55%)]", dotColor: "bg-[hsl(0,70%,55%)]" },
   };
 
   const { color, dotColor } = stateConfig[state.state] || stateConfig.idle;
@@ -350,7 +353,7 @@ function NodeStatusRow({
         <div className="mt-1.5 ml-3.5">
           <div className="h-0.5 bg-[hsl(0,0%,15%)] rounded-full overflow-hidden">
             <div
-              className="h-full bg-[hsl(210,60%,60%)] transition-all duration-300"
+              className="h-full bg-[hsl(210,60%,60%)] transition-all duration-100"
               style={{ width: `${state.progress}%` }}
             />
           </div>

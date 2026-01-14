@@ -57,7 +57,7 @@ export function SparklineCard({
 
   if (isLoading) {
     return (
-      <div className="bg-[hsl(0,0%,9%)] rounded-lg p-4 border border-[hsl(0,0%,14%)]">
+      <div className="bg-[hsl(0,0%,9%)] rounded-md p-4 border border-[hsl(0,0%,12%)]">
         <div className="animate-pulse">
           <div className="h-3 bg-[hsl(0,0%,15%)] rounded w-16 mb-2" />
           <div className="h-6 bg-[hsl(0,0%,15%)] rounded w-20 mb-3" />
@@ -70,7 +70,7 @@ export function SparklineCard({
   return (
     <div
       className={cn(
-        "bg-[hsl(0,0%,9%)] rounded-lg p-4 border border-[hsl(0,0%,14%)] transition-colors duration-100",
+        "bg-[hsl(0,0%,9%)] rounded-md p-4 border border-[hsl(0,0%,12%)] transition-colors duration-100",
         onClick && "cursor-pointer hover:bg-[hsl(0,0%,10%)] hover:border-[hsl(0,0%,18%)]"
       )}
       onClick={onClick}

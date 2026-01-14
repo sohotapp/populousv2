@@ -112,7 +112,8 @@ export function ChatPanel({
   return (
     <div className={cn("flex flex-col bg-[hsl(0,0%,7%)]", className)}>
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2.5 flex-shrink-0">
+      {/* design.md: panel padding 12px (space-3) */}
+      <div className="flex items-center justify-between px-3 py-3 flex-shrink-0">
         <span className="text-[hsl(0,0%,65%)] text-[13px] font-medium">
           Simulation Assistant
         </span>
@@ -193,10 +194,10 @@ export function ChatPanel({
           </div>
         )}
 
-        {/* Boxed input */}
+        {/* Boxed input - design.md: 6px radius for cards/panels */}
         <div
           className={cn(
-            "rounded-lg border transition-colors duration-100",
+            "rounded-md border transition-colors duration-100",
             isFocused
               ? "border-[hsl(0,0%,25%)] bg-[hsl(0,0%,9%)]"
               : "border-[hsl(0,0%,15%)] bg-[hsl(0,0%,8%)]"

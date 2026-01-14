@@ -22,6 +22,7 @@ export type PlaybookCategory =
   | "strategy"
   | "operational"
   | "financial"
+  | "defense"
   | "pattern";
 
 export interface PlaybookNode {
@@ -51,7 +52,8 @@ export const playbookCategories: Record<PlaybookCategory, {
   strategy: { label: "STRATEGY", order: 1 },
   operational: { label: "OPERATIONAL", order: 2 },
   financial: { label: "FINANCIAL", order: 3 },
-  pattern: { label: "PATTERNS", order: 4 },
+  defense: { label: "DEFENSE", order: 4 },
+  pattern: { label: "PATTERNS", order: 5 },
 };
 
 // Import playbooks
@@ -155,6 +157,10 @@ function getIconForPrimitive(primitiveId: string): string {
     "control.condition": "GitBranch",
     "control.loop": "Workflow",
     "control.merge": "Merge",
+    "defense.threat-assessment": "AlertTriangle",
+    "defense.escalation-ladder": "TrendingUp",
+    "defense.red-team": "Eye",
+    "defense.course-of-action": "Target",
   };
   return iconMap[primitiveId] || "Database";
 }
@@ -174,6 +180,7 @@ function getColorForPrimitive(primitiveId: string): string {
     human: "#ec4899",
     output: "#22c55e",
     control: "#6b7280",
+    defense: "#ef4444",
   };
   return colorMap[category] || "#6b7280";
 }
