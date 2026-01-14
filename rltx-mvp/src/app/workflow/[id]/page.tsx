@@ -62,6 +62,7 @@ export default function WorkflowPage({ params }: PageProps) {
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
   const startExecution = useCanvasStore((s) => s.startExecution);
+  const loadWorkflow = useCanvasStore((s) => s.loadWorkflow);
 
   const { connect, joinExecution, executionStatus } = useExecutionStore();
 
@@ -98,6 +99,21 @@ export default function WorkflowPage({ params }: PageProps) {
       setIsRunning(false);
     }
   };
+
+  // Handle workflow generated from chat - load into canvas
+  const handleWorkflowGenerated = useCallback((generatedWorkflow: {
+    id: string;
+    name: string;
+    nodeCount: number;
+    nodes: unknown[];
+    edges: unknown[];
+  }) => {
+    // Load the generated nodes and edges into the canvas
+    loadWorkflow(
+      generatedWorkflow.nodes as Parameters<typeof loadWorkflow>[0],
+      generatedWorkflow.edges as Parameters<typeof loadWorkflow>[1]
+    );
+  }, [loadWorkflow]);
 
   useEffect(() => {
     const fetchWorkflow = async () => {
@@ -157,7 +173,7 @@ export default function WorkflowPage({ params }: PageProps) {
       {/* Header - Linear style */}
       <header className="h-11 flex items-center justify-between px-3 border-b border-[hsl(0,0%,12%)] flex-shrink-0 bg-[hsl(0,0%,7%)]">
         {/* Left: Navigation & Title */}
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-1 min-w-0">
           <button
             onClick={() => router.push("/")}
             className="h-6 w-6 flex items-center justify-center rounded text-[hsl(0,0%,50%)] hover:text-[hsl(0,0%,75%)] hover:bg-[hsl(0,0%,12%)] transition-colors duration-100"
@@ -165,11 +181,25 @@ export default function WorkflowPage({ params }: PageProps) {
             <ChevronLeft className="w-4 h-4" />
           </button>
 
+          <button
+            onClick={() => setIsLeftSidebarOpen(!isLeftSidebarOpen)}
+            className="h-6 w-6 flex items-center justify-center rounded text-[hsl(0,0%,50%)] hover:text-[hsl(0,0%,75%)] hover:bg-[hsl(0,0%,12%)] transition-colors duration-100"
+            title={isLeftSidebarOpen ? "Hide library" : "Show library"}
+          >
+            {isLeftSidebarOpen ? (
+              <PanelLeftClose className="w-4 h-4" />
+            ) : (
+              <PanelLeft className="w-4 h-4" />
+            )}
+          </button>
+
+          <div className="w-px h-4 bg-[hsl(0,0%,15%)] mx-1" />
+
           <h1 className="text-[13px] font-medium text-[hsl(0,0%,85%)] truncate">
             {workflow.name}
           </h1>
 
-          <span className="text-[11px] text-[hsl(0,0%,40%)] hidden sm:block tabular-nums">
+          <span className="text-[11px] text-[hsl(0,0%,40%)] hidden sm:block tabular-nums ml-2">
             {nodes.length} nodes
           </span>
         </div>
@@ -243,32 +273,13 @@ export default function WorkflowPage({ params }: PageProps) {
       {/* Main Layout */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left: Primitives Library - collapsible & resizable */}
-        {isLeftSidebarOpen ? (
+        {isLeftSidebarOpen && (
           <div
             className="relative flex-shrink-0 border-r border-[hsl(0,0%,12%)]"
             style={{ width: leftSidebarWidth }}
           >
-            {/* Collapse button - top right corner */}
-            <button
-              onClick={() => setIsLeftSidebarOpen(false)}
-              className="absolute top-2 right-2 z-20 h-6 w-6 flex items-center justify-center rounded text-[hsl(0,0%,40%)] hover:text-[hsl(0,0%,65%)] hover:bg-[hsl(0,0%,12%)] transition-colors duration-100"
-              title="Collapse sidebar"
-            >
-              <PanelLeftClose className="w-3.5 h-3.5" />
-            </button>
             <PrimitiveLibrary className="h-full" />
             <ResizeHandle side="left" onResize={handleLeftResize} />
-          </div>
-        ) : (
-          /* Collapsed state - thin strip with expand button */
-          <div className="flex-shrink-0 w-10 border-r border-[hsl(0,0%,12%)] bg-[hsl(0,0%,7%)] flex flex-col items-center pt-2">
-            <button
-              onClick={() => setIsLeftSidebarOpen(true)}
-              className="h-6 w-6 flex items-center justify-center rounded text-[hsl(0,0%,40%)] hover:text-[hsl(0,0%,65%)] hover:bg-[hsl(0,0%,12%)] transition-colors duration-100"
-              title="Expand sidebar"
-            >
-              <PanelLeft className="w-3.5 h-3.5" />
-            </button>
           </div>
         )}
 
@@ -288,7 +299,11 @@ export default function WorkflowPage({ params }: PageProps) {
           >
             <ResizeHandle side="right" onResize={handleRightResize} />
             {rightPanel === "chat" && (
-              <ChatPanel workflowId={workflow.id} className="h-full" />
+              <ChatPanel
+                workflowId={workflow.id}
+                onWorkflowGenerated={handleWorkflowGenerated}
+                className="h-full"
+              />
             )}
             {rightPanel === "inspector" && (
               <Inspector className="h-full" />

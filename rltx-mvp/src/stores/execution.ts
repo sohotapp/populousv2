@@ -104,7 +104,7 @@ interface ClientToServerEvents {
   "execution:cancel": { executionId: string };
 }
 
-type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
+type TypedSocket = Socket;
 
 export type NodeState = "idle" | "pending" | "running" | "completed" | "failed";
 
@@ -180,12 +180,12 @@ export const useExecutionStore = create<ExecutionStore>((set, get) => ({
     const targetUrl = url || engineUrl;
     console.log(`[WS] Connecting to ${targetUrl}...`);
 
-    const newSocket: TypedSocket = io(targetUrl, {
+    const newSocket = io(targetUrl, {
       transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
-    });
+    }) as TypedSocket;
 
     // Connection events
     newSocket.on("connect", () => {
@@ -199,7 +199,7 @@ export const useExecutionStore = create<ExecutionStore>((set, get) => ({
     });
 
     // Execution events
-    newSocket.on("execution:started", (data) => {
+    newSocket.on("execution:started", (data: ServerToClientEvents["execution:started"]) => {
       console.log("[WS] Execution started:", data.executionId);
       set({
         currentExecutionId: data.executionId,
@@ -211,7 +211,7 @@ export const useExecutionStore = create<ExecutionStore>((set, get) => ({
       });
     });
 
-    newSocket.on("execution:phase", (data) => {
+    newSocket.on("execution:phase", (data: ServerToClientEvents["execution:phase"]) => {
       console.log(`[WS] Phase: ${data.phase} (${data.level}/${data.totalLevels})`);
       set({
         currentPhase: {
@@ -223,7 +223,7 @@ export const useExecutionStore = create<ExecutionStore>((set, get) => ({
     });
 
     // Node events
-    newSocket.on("node:started", (data) => {
+    newSocket.on("node:started", (data: ServerToClientEvents["node:started"]) => {
       console.log(`[WS] Node started: ${data.nodeId}`);
       const { nodeStates, onNodeStateChange } = get();
       set({
@@ -235,7 +235,7 @@ export const useExecutionStore = create<ExecutionStore>((set, get) => ({
       onNodeStateChange?.(data.nodeId, "running");
     });
 
-    newSocket.on("node:progress", (data) => {
+    newSocket.on("node:progress", (data: ServerToClientEvents["node:progress"]) => {
       const { nodeStates } = get();
       const existing = nodeStates[data.nodeId] || { state: "running" };
       set({
@@ -250,7 +250,7 @@ export const useExecutionStore = create<ExecutionStore>((set, get) => ({
       });
     });
 
-    newSocket.on("node:output_stream", (data) => {
+    newSocket.on("node:output_stream", (data: ServerToClientEvents["node:output_stream"]) => {
       const { nodeStates } = get();
       const existing = nodeStates[data.nodeId] || { state: "running" };
       const currentStream = existing.streamOutput || "";
@@ -265,7 +265,7 @@ export const useExecutionStore = create<ExecutionStore>((set, get) => ({
       });
     });
 
-    newSocket.on("node:completed", (data) => {
+    newSocket.on("node:completed", (data: ServerToClientEvents["node:completed"]) => {
       console.log(`[WS] Node completed: ${data.nodeId}`);
       const { nodeStates, distributions, onNodeStateChange } = get();
 
@@ -290,7 +290,7 @@ export const useExecutionStore = create<ExecutionStore>((set, get) => ({
       onNodeStateChange?.(data.nodeId, "completed");
     });
 
-    newSocket.on("node:failed", (data) => {
+    newSocket.on("node:failed", (data: ServerToClientEvents["node:failed"]) => {
       console.log(`[WS] Node failed: ${data.nodeId}`, data.error);
       const { nodeStates, onNodeStateChange } = get();
       set({
@@ -306,7 +306,7 @@ export const useExecutionStore = create<ExecutionStore>((set, get) => ({
     });
 
     // Execution completion events
-    newSocket.on("execution:completed", (data) => {
+    newSocket.on("execution:completed", (data: ServerToClientEvents["execution:completed"]) => {
       console.log("[WS] Execution completed:", data.executionId);
       const newDistributions = { ...get().distributions };
       if (data.results.distributions) {
@@ -319,7 +319,7 @@ export const useExecutionStore = create<ExecutionStore>((set, get) => ({
       });
     });
 
-    newSocket.on("execution:failed", (data) => {
+    newSocket.on("execution:failed", (data: ServerToClientEvents["execution:failed"]) => {
       console.log("[WS] Execution failed:", data.error);
       set({
         executionStatus: "failed",

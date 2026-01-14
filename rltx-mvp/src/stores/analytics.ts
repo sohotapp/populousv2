@@ -1,0 +1,211 @@
+import { create } from "zustand";
+
+// Data point for sparklines
+export interface DataPoint {
+  date: string;
+  value: number;
+}
+
+// Analytics metrics
+export interface AnalyticsMetrics {
+  // Execution metrics
+  totalRuns: number;
+  runsChange: number; // Percentage change from previous period
+  runsHistory: DataPoint[];
+
+  successRate: number;
+  successRateChange: number;
+  successHistory: DataPoint[];
+
+  avgExecutionTime: number; // in seconds
+  avgTimeChange: number;
+  timeHistory: DataPoint[];
+
+  // Cost metrics
+  totalCost: number;
+  costChange: number;
+  costHistory: DataPoint[];
+
+  // Usage metrics
+  mostUsedPrimitives: { name: string; count: number }[];
+  peakHours: { hour: number; count: number }[];
+
+  // Recent activity
+  recentExecutions: RecentExecution[];
+}
+
+export interface RecentExecution {
+  id: string;
+  workflowId: string;
+  workflowName: string;
+  status: "running" | "completed" | "failed";
+  startedAt: string;
+  completedAt?: string;
+  duration?: number;
+  cost?: number;
+}
+
+interface AnalyticsState {
+  metrics: AnalyticsMetrics | null;
+  isLoading: boolean;
+  error: string | null;
+  lastUpdated: string | null;
+
+  // Actions
+  fetchMetrics: () => Promise<void>;
+  setMetrics: (metrics: AnalyticsMetrics) => void;
+  updateRecentExecution: (execution: RecentExecution) => void;
+  addRecentExecution: (execution: RecentExecution) => void;
+}
+
+// Generate mock data for development
+function generateMockMetrics(): AnalyticsMetrics {
+  const generateHistory = (baseValue: number, variance: number): DataPoint[] => {
+    const points: DataPoint[] = [];
+    const now = new Date();
+    for (let i = 13; i >= 0; i--) {
+      const date = new Date(now);
+      date.setDate(date.getDate() - i);
+      points.push({
+        date: date.toISOString().split("T")[0],
+        value: Math.max(0, baseValue + (Math.random() - 0.5) * variance * 2),
+      });
+    }
+    return points;
+  };
+
+  return {
+    totalRuns: 47,
+    runsChange: 12,
+    runsHistory: generateHistory(3, 2),
+
+    successRate: 94,
+    successRateChange: 2,
+    successHistory: generateHistory(90, 10),
+
+    avgExecutionTime: 12.4,
+    avgTimeChange: -8,
+    timeHistory: generateHistory(12, 5),
+
+    totalCost: 47.2,
+    costChange: 15,
+    costHistory: generateHistory(3, 2),
+
+    mostUsedPrimitives: [
+      { name: "Deep Analysis", count: 34 },
+      { name: "Monte Carlo", count: 28 },
+      { name: "Scenario Analysis", count: 22 },
+      { name: "Compare Options", count: 18 },
+      { name: "API Fetch", count: 15 },
+    ],
+
+    peakHours: [
+      { hour: 9, count: 12 },
+      { hour: 10, count: 18 },
+      { hour: 11, count: 15 },
+      { hour: 14, count: 22 },
+      { hour: 15, count: 19 },
+      { hour: 16, count: 14 },
+    ],
+
+    recentExecutions: [
+      {
+        id: "exec-1",
+        workflowId: "wf-1",
+        workflowName: "Market Expansion Analysis",
+        status: "completed",
+        startedAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+        completedAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+        duration: 15 * 60,
+        cost: 2.45,
+      },
+      {
+        id: "exec-2",
+        workflowId: "wf-2",
+        workflowName: "Pricing Strategy",
+        status: "running",
+        startedAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
+      },
+      {
+        id: "exec-3",
+        workflowId: "wf-3",
+        workflowName: "Competitor Analysis",
+        status: "completed",
+        startedAt: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+        completedAt: new Date(Date.now() - 1000 * 60 * 60 * 1.5).toISOString(),
+        duration: 30 * 60,
+        cost: 4.12,
+      },
+      {
+        id: "exec-4",
+        workflowId: "wf-4",
+        workflowName: "Investment Decision",
+        status: "failed",
+        startedAt: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
+        completedAt: new Date(Date.now() - 1000 * 60 * 60 * 2.8).toISOString(),
+        duration: 12 * 60,
+      },
+    ],
+  };
+}
+
+export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
+  metrics: null,
+  isLoading: false,
+  error: null,
+  lastUpdated: null,
+
+  fetchMetrics: async () => {
+    set({ isLoading: true, error: null });
+
+    try {
+      // In production, this would fetch from /api/analytics
+      // For now, use mock data
+      await new Promise((resolve) => setTimeout(resolve, 500)); // Simulate network delay
+      const metrics = generateMockMetrics();
+
+      set({
+        metrics,
+        isLoading: false,
+        lastUpdated: new Date().toISOString(),
+      });
+    } catch (error) {
+      set({
+        error: error instanceof Error ? error.message : "Failed to fetch analytics",
+        isLoading: false,
+      });
+    }
+  },
+
+  setMetrics: (metrics) => {
+    set({ metrics, lastUpdated: new Date().toISOString() });
+  },
+
+  updateRecentExecution: (execution) => {
+    const state = get();
+    if (!state.metrics) return;
+
+    const updatedExecutions = state.metrics.recentExecutions.map((e) =>
+      e.id === execution.id ? execution : e
+    );
+
+    set({
+      metrics: {
+        ...state.metrics,
+        recentExecutions: updatedExecutions,
+      },
+    });
+  },
+
+  addRecentExecution: (execution) => {
+    const state = get();
+    if (!state.metrics) return;
+
+    set({
+      metrics: {
+        ...state.metrics,
+        recentExecutions: [execution, ...state.metrics.recentExecutions.slice(0, 9)],
+      },
+    });
+  },
+}));

@@ -9,6 +9,24 @@ import {
   Distribution,
 } from "./types";
 
+// Agent-based simulation imports
+import { samplePopulation, AgentProfile } from "../population";
+import {
+  compilePrompt,
+  compilePromptBatch,
+  ScenarioContext,
+  QuestionType,
+} from "../agents/prompt-compiler";
+import { parseResponse, aggregateResponses, ParseOptions } from "../agents/response-parser";
+import { routePrompt, routeBatch, RoutingOptions } from "../agents/model-router";
+import { executeBatch, createBatchRequests, BatchResult } from "../agents/parallel-batch";
+import {
+  executeGameTheory,
+  StrategicActor,
+  GameScenario,
+  PRESET_ACTORS,
+} from "../agents/game-theory";
+
 export class ComputeExecutor extends BaseExecutor {
   type: ExecutorType = "compute";
   primitiveIds = [
@@ -71,107 +89,442 @@ export class ComputeExecutor extends BaseExecutor {
   private async executeMonteCarlo(
     ctx: ExecutorContext
   ): Promise<{ outputs: Record<string, unknown>; distribution: Distribution }> {
-    const { populationSize = 1000, rollouts = 1000 } = ctx.config;
-    const { scenario, distributions: inputDists } = ctx.inputs;
+    // Extract configuration
+    const {
+      populationId = "us_adults",
+      sampleSize = 1000,
+      useArchetypes = true,
+      archetypeCount = 50,
+      questionType = "binary",
+      domain = "consumer",
+      // Model routing options
+      forceTier,
+      maxCostPerCall,
+      qualityRequirement,
+    } = ctx.config;
 
-    ctx.onProgress(10, `Running ${rollouts} simulations...`);
+    // Extract scenario from inputs
+    const {
+      scenario: scenarioText,
+      question: questionText,
+      context: contextText,
+      options: choiceOptions,
+      scaleMin,
+      scaleMax,
+    } = ctx.inputs;
 
-    // Generate samples based on input distributions
-    const samples: number[] = [];
-    const totalIterations = rollouts as number;
-
-    for (let i = 0; i < totalIterations; i++) {
-      // Simple Monte Carlo - sample from normal distribution
-      const sample = this.sampleNormal(50, 15); // Base outcome
-      samples.push(sample);
-
-      if (i % 100 === 0) {
-        ctx.onProgress(10 + (80 * i / totalIterations), `Iteration ${i}/${totalIterations}`);
-      }
+    // Validate required inputs
+    if (!scenarioText || !questionText) {
+      throw new ExecutionError(
+        "MISSING_INPUT",
+        "Monte Carlo simulation requires 'scenario' and 'question' inputs",
+        false
+      );
     }
 
-    ctx.onProgress(95, "Computing statistics...");
+    ctx.onProgress(5, "Sampling population...");
 
-    // Compute distribution statistics
-    const sorted = [...samples].sort((a, b) => a - b);
-    const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
-    const variance = samples.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / samples.length;
-    const std = Math.sqrt(variance);
+    // Step 1: Sample population
+    const samplingResult = samplePopulation({
+      populationId: populationId as string,
+      sampleSize: sampleSize as number,
+      useArchetypes: useArchetypes as boolean,
+      archetypeCount: archetypeCount as number,
+    });
 
+    const agents = samplingResult.agents;
+    ctx.onProgress(10, `Generated ${agents.length} agent profiles (effective sample: ${samplingResult.metadata.effectiveSampleSize})`);
+
+    // Step 2: Build scenario context
+    const scenarioContext: ScenarioContext = {
+      scenario: scenarioText as string,
+      question: questionText as string,
+      questionType: questionType as QuestionType,
+      context: contextText as string | undefined,
+      domain: domain as "enterprise" | "defense" | "consumer",
+      options: choiceOptions as string[] | undefined,
+      scaleMin: scaleMin as number | undefined,
+      scaleMax: scaleMax as number | undefined,
+    };
+
+    ctx.onProgress(15, "Compiling agent prompts...");
+
+    // Step 3: Compile prompts for all agents
+    const compiledPrompts = compilePromptBatch(agents, scenarioContext);
+
+    // Step 4: Route prompts to appropriate models
+    const routingOptions: RoutingOptions = {
+      domain: domain as "enterprise" | "defense" | "consumer",
+      forceTier: forceTier as "haiku" | "sonnet" | "opus" | undefined,
+      maxCostPerCall: maxCostPerCall as number | undefined,
+      qualityRequirement: qualityRequirement as number | undefined,
+    };
+
+    const { routes, summary: routingSummary } = routeBatch(
+      compiledPrompts.map((p) => p.prompt),
+      routingOptions
+    );
+
+    ctx.onProgress(20, `Routing: ${routingSummary.byTier.haiku} Haiku, ${routingSummary.byTier.sonnet} Sonnet, ${routingSummary.byTier.opus} Opus`);
+    ctx.onStream(`Estimated cost: $${routingSummary.totalEstimatedCost.toFixed(4)}, latency: ${Math.round(routingSummary.parallelLatencyMs / 1000)}s\n`);
+
+    // Step 5: Create batch requests
+    const parseOptions: ParseOptions = {
+      questionType: questionType as QuestionType,
+      options: choiceOptions as string[] | undefined,
+      scaleMin: scaleMin as number | undefined,
+      scaleMax: scaleMax as number | undefined,
+    };
+
+    const batchRequests = createBatchRequests(
+      agents,
+      compiledPrompts.map((p) => p.prompt),
+      routes,
+      parseOptions
+    );
+
+    ctx.onProgress(25, `Executing ${batchRequests.length} agent simulations...`);
+
+    // Step 6: Execute batch with progress tracking
+    let lastProgress = 25;
+    const results = await executeBatch(batchRequests, {
+      abortSignal: ctx.abortSignal,
+      onProgress: (progress) => {
+        const pct = 25 + (progress.completed / progress.total) * 65;
+        if (pct - lastProgress >= 5) {
+          ctx.onProgress(pct, `Completed ${progress.completed}/${progress.total} agents`);
+          lastProgress = pct;
+        }
+      },
+      onResult: (result) => {
+        if (result.success && result.response.reasoning) {
+          // Stream occasional reasoning samples
+          if (Math.random() < 0.1) {
+            ctx.onStream(`[${result.modelUsed}] ${result.response.reasoning.slice(0, 100)}...\n`);
+          }
+        }
+      },
+    });
+
+    ctx.onProgress(90, "Aggregating results...");
+
+    // Step 7: Aggregate responses
+    const weights = results.map((r) => r.weight);
+    const parsedResponses = results.map((r) => r.response);
+    const aggregated = aggregateResponses(parsedResponses, weights);
+
+    // Step 8: Build distribution
     const distribution: Distribution = {
       type: "empirical",
-      mean,
-      std,
-      samples: sorted.slice(0, 100), // Keep subset for visualization
+      mean: aggregated.weightedMean * 100, // Scale to percentage
+      std: aggregated.std * 100,
       percentiles: {
-        p5: sorted[Math.floor(samples.length * 0.05)],
-        p25: sorted[Math.floor(samples.length * 0.25)],
-        p50: sorted[Math.floor(samples.length * 0.50)],
-        p75: sorted[Math.floor(samples.length * 0.75)],
-        p95: sorted[Math.floor(samples.length * 0.95)],
+        p5: (aggregated.mean - 1.645 * aggregated.std) * 100,
+        p25: (aggregated.mean - 0.675 * aggregated.std) * 100,
+        p50: aggregated.mean * 100,
+        p75: (aggregated.mean + 0.675 * aggregated.std) * 100,
+        p95: (aggregated.mean + 1.645 * aggregated.std) * 100,
       },
     };
 
+    // Step 9: Build detailed outputs
+    const successfulResults = results.filter((r) => r.success);
+    const failedResults = results.filter((r) => !r.success);
+
+    // Calculate actual costs
+    const actualCosts = {
+      haiku: results.filter((r) => r.modelUsed === "haiku").length * 0.0003,
+      sonnet: results.filter((r) => r.modelUsed === "sonnet").length * 0.003,
+      opus: results.filter((r) => r.modelUsed === "opus").length * 0.03,
+    };
+    const totalActualCost = actualCosts.haiku + actualCosts.sonnet + actualCosts.opus;
+
+    // Build segment analysis for binary questions
+    let segmentAnalysis: Record<string, unknown> | undefined;
+    if (questionType === "binary") {
+      segmentAnalysis = this.buildSegmentAnalysis(results, agents);
+    }
+
+    // Build reasoning samples
+    const reasoningSamples = successfulResults
+      .filter((r) => r.response.reasoning)
+      .slice(0, 10)
+      .map((r) => ({
+        agentId: r.agentId,
+        answer: r.response.value,
+        confidence: r.response.confidence,
+        reasoning: r.response.reasoning,
+      }));
+
     return {
       outputs: {
+        // Main result
         outcomeDistribution: distribution,
-        samples: sorted,
-        summary: {
-          mean,
-          std,
-          min: sorted[0],
-          max: sorted[sorted.length - 1],
-          iterations: totalIterations,
+        prediction: {
+          value: aggregated.weightedMean,
+          confidenceInterval: {
+            low: aggregated.mean - 1.96 * aggregated.std,
+            high: aggregated.mean + 1.96 * aggregated.std,
+          },
+          sampleSize: samplingResult.metadata.effectiveSampleSize,
         },
+        // For binary: proportion saying yes
+        ...(questionType === "binary" && aggregated.distribution.yes !== undefined && {
+          yesRate: aggregated.distribution.yes,
+          noRate: aggregated.distribution.no,
+        }),
+        // For choice: option distribution
+        ...(questionType === "choice" && aggregated.distribution.options && {
+          optionDistribution: aggregated.distribution.options,
+        }),
+        // Confidence analysis
+        confidenceBreakdown: aggregated.confidenceBreakdown,
+        // Segment analysis (demographics)
+        segmentAnalysis,
+        // Sample reasoning for transparency
+        reasoningSamples,
+        // Execution metadata
+        execution: {
+          populationId,
+          totalAgents: agents.length,
+          effectiveSampleSize: samplingResult.metadata.effectiveSampleSize,
+          successfulResponses: successfulResults.length,
+          failedResponses: failedResults.length,
+          parseSuccessRate: aggregated.successfulParses / parsedResponses.length,
+          modelUsage: {
+            haiku: results.filter((r) => r.modelUsed === "haiku").length,
+            sonnet: results.filter((r) => r.modelUsed === "sonnet").length,
+            opus: results.filter((r) => r.modelUsed === "opus").length,
+          },
+          costs: {
+            estimated: routingSummary.totalEstimatedCost,
+            actual: totalActualCost,
+          },
+          latency: {
+            estimated: routingSummary.parallelLatencyMs,
+            actual: results.reduce((max, r) => Math.max(max, r.latencyMs), 0),
+          },
+        },
+        // Errors if any
+        ...(failedResults.length > 0 && {
+          errors: failedResults.slice(0, 5).map((r) => ({
+            agentId: r.agentId,
+            error: r.error,
+          })),
+        }),
       },
       distribution,
     };
   }
 
-  private async executeGameEquilibrium(ctx: ExecutorContext): Promise<Record<string, unknown>> {
-    const { equilibriumType = "nash", maxIterations = 100 } = ctx.config;
-    const { players, payoffs } = ctx.inputs;
+  // Build segment analysis from results
+  private buildSegmentAnalysis(
+    results: BatchResult[],
+    agents: AgentProfile[]
+  ): Record<string, unknown> {
+    const agentMap = new Map(agents.map((a) => [a.id, a]));
+    const segments: Record<string, { yes: number; no: number; total: number }> = {};
 
-    ctx.onProgress(20, `Computing ${equilibriumType} equilibrium...`);
+    // Analyze by age
+    for (const result of results) {
+      if (!result.success) continue;
+      const agent = agentMap.get(result.agentId);
+      if (!agent) continue;
 
-    // Simplified Nash equilibrium calculation
-    // In reality, this would use proper game theory algorithms
-    const playerList = (players as unknown[]) || ["Player 1", "Player 2"];
-
-    const strategies: Record<string, Record<string, number>> = {};
-    const equilibrium: Record<string, string> = {};
-
-    for (const player of playerList) {
-      const playerName = String(player);
-      // Generate plausible mixed strategy
-      strategies[playerName] = {
-        cooperate: 0.3 + Math.random() * 0.4,
-        defect: 0.3 + Math.random() * 0.4,
-      };
-
-      // Normalize
-      const total = Object.values(strategies[playerName]).reduce((a, b) => a + b, 0);
-      for (const key of Object.keys(strategies[playerName])) {
-        strategies[playerName][key] /= total;
+      const ageGroup = agent.demographics.age;
+      if (!segments[`age_${ageGroup}`]) {
+        segments[`age_${ageGroup}`] = { yes: 0, no: 0, total: 0 };
       }
 
-      // Best response
-      equilibrium[playerName] = strategies[playerName].cooperate > 0.5 ? "cooperate" : "defect";
+      segments[`age_${ageGroup}`].total += result.weight;
+      if (result.response.value === true) {
+        segments[`age_${ageGroup}`].yes += result.weight;
+      } else {
+        segments[`age_${ageGroup}`].no += result.weight;
+      }
+
+      // Also analyze by income
+      const incomeGroup = agent.demographics.income;
+      if (!segments[`income_${incomeGroup}`]) {
+        segments[`income_${incomeGroup}`] = { yes: 0, no: 0, total: 0 };
+      }
+
+      segments[`income_${incomeGroup}`].total += result.weight;
+      if (result.response.value === true) {
+        segments[`income_${incomeGroup}`].yes += result.weight;
+      } else {
+        segments[`income_${incomeGroup}`].no += result.weight;
+      }
     }
 
-    ctx.onProgress(80, "Analyzing stability...");
+    // Convert to rates
+    const segmentRates: Record<string, number> = {};
+    for (const [key, data] of Object.entries(segments)) {
+      if (data.total > 0) {
+        segmentRates[key] = data.yes / data.total;
+      }
+    }
 
-    return {
-      equilibrium: {
-        type: equilibriumType,
-        strategies,
-        pureStrategies: equilibrium,
-        isStable: true,
-        iterations: Math.floor(maxIterations as number * 0.7),
-      },
-      strategies: strategies,
-      payoffMatrix: payoffs || this.generateDefaultPayoffMatrix(playerList),
+    return segmentRates;
+  }
+
+  private async executeGameEquilibrium(ctx: ExecutorContext): Promise<Record<string, unknown>> {
+    // Extract configuration
+    const {
+      maxRounds = 5,
+      domain = "enterprise",
+      model = "claude-opus-4-20250514",
+    } = ctx.config;
+
+    // Extract actors and scenario from inputs
+    const {
+      actors: actorDefs,
+      scenario: scenarioText,
+      context: contextText,
+      possibleActions: actionDefs,
+    } = ctx.inputs;
+
+    ctx.onProgress(5, "Setting up game theory simulation...");
+
+    // Build actors
+    let actors: StrategicActor[];
+
+    if (actorDefs && Array.isArray(actorDefs)) {
+      // Use provided actor definitions
+      actors = (actorDefs as Array<{
+        id?: string;
+        name: string;
+        role: string;
+        objectives?: string[];
+        constraints?: string[];
+        context?: string;
+      }>).map((def, i) => ({
+        id: def.id || `actor_${i}`,
+        name: def.name,
+        role: def.role,
+        objectives: def.objectives || ["Maximize own outcome"],
+        constraints: def.constraints || [],
+        context: def.context,
+      }));
+    } else {
+      // Default to 2 generic competitors
+      actors = [
+        PRESET_ACTORS.competitor("Company A", "Market leader with 40% share"),
+        PRESET_ACTORS.competitor("Company B", "Challenger with 25% share"),
+      ];
+    }
+
+    // Build scenario
+    let possibleActions: Record<string, string[]>;
+
+    if (actionDefs && typeof actionDefs === "object") {
+      possibleActions = actionDefs as Record<string, string[]>;
+    } else {
+      // Default actions for each actor
+      possibleActions = {};
+      for (const actor of actors) {
+        possibleActions[actor.id] = ["Cooperate", "Compete aggressively", "Wait and see"];
+      }
+    }
+
+    const scenario: GameScenario = {
+      description: (scenarioText as string) || "A competitive market situation where multiple actors must choose strategies.",
+      context: (contextText as string) || "",
+      possibleActions,
+      domain: domain as "enterprise" | "defense" | "consumer",
     };
+
+    ctx.onProgress(10, `Simulating ${actors.length} strategic actors over up to ${maxRounds} rounds...`);
+
+    // Stream actor info
+    ctx.onStream(`Strategic actors:\n`);
+    actors.forEach((a) => {
+      ctx.onStream(`- ${a.name} (${a.role})\n`);
+    });
+    ctx.onStream(`\n`);
+
+    // Execute game theory simulation
+    const result = await executeGameTheory({
+      actors,
+      scenario,
+      maxRounds: maxRounds as number,
+      model: model as string,
+      abortSignal: ctx.abortSignal,
+      onRoundComplete: (round) => {
+        const pct = 10 + (round.round / (maxRounds as number)) * 80;
+        ctx.onProgress(pct, `Round ${round.round}: ${round.converged ? "Converged!" : "Continuing..."}`);
+
+        // Stream round results
+        ctx.onStream(`\n--- Round ${round.round} ---\n`);
+        round.actions.forEach((action) => {
+          const actor = actors.find((a) => a.id === action.actorId);
+          ctx.onStream(`${actor?.name || action.actorId}: ${action.action} (${action.confidence > 0.7 ? "high" : action.confidence > 0.5 ? "medium" : "low"} confidence)\n`);
+          ctx.onStream(`  Reasoning: ${action.reasoning.slice(0, 150)}...\n`);
+        });
+
+        if (round.converged) {
+          ctx.onStream(`\n✓ ${round.convergenceReason}\n`);
+        }
+      },
+    });
+
+    ctx.onProgress(95, "Analyzing results...");
+
+    // Build output
+    const output: Record<string, unknown> = {
+      // Equilibrium result
+      equilibrium: result.equilibrium ? {
+        actions: result.equilibrium.actions,
+        isStable: result.equilibrium.isStable,
+        stabilityReason: result.equilibrium.stabilityReason,
+        convergedInRound: result.metadata.convergenceRound,
+      } : null,
+
+      // All rounds for analysis
+      rounds: result.rounds.map((round) => ({
+        round: round.round,
+        actions: round.actions.map((a) => ({
+          actor: actors.find((actor) => actor.id === a.actorId)?.name || a.actorId,
+          action: a.action,
+          confidence: a.confidence,
+          anticipatedResponses: a.anticipatedResponses,
+        })),
+        converged: round.converged,
+        convergenceReason: round.convergenceReason,
+      })),
+
+      // Summary statistics
+      summary: {
+        totalRounds: result.metadata.totalRounds,
+        converged: result.metadata.converged,
+        convergenceRound: result.metadata.convergenceRound,
+        modelUsed: result.metadata.modelUsed,
+        latencyMs: result.metadata.totalLatencyMs,
+      },
+
+      // Full reasoning traces for transparency
+      reasoning: result.reasoning.map((r) => ({
+        actor: actors.find((a) => a.id === r.actorId)?.name || r.actorId,
+        fullReasoning: r.fullReasoning,
+      })),
+
+      // Actor definitions for reference
+      actors: actors.map((a) => ({
+        id: a.id,
+        name: a.name,
+        role: a.role,
+        objectives: a.objectives,
+      })),
+
+      // Scenario for reference
+      scenario: {
+        description: scenario.description,
+        context: scenario.context,
+        possibleActions: scenario.possibleActions,
+      },
+    };
+
+    return output;
   }
 
   private async executeCounterfactual(ctx: ExecutorContext): Promise<Record<string, unknown>> {

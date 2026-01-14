@@ -10,7 +10,9 @@ import {
   ReactFlowProvider,
   useReactFlow,
   useOnViewportChange,
+  SelectionMode,
   type Node,
+  type Edge,
   type Viewport,
   type Connection,
 } from "@xyflow/react";
@@ -76,19 +78,31 @@ function CanvasInner({ workflowId, initialGraph }: CanvasInnerProps) {
     }
   }, [workflowId, initialGraph, setWorkflowId, loadWorkflow]);
 
-  // Handle drop from primitive library
+  // Get addPlaybook from store
+  const addPlaybook = useCanvasStore((s) => s.addPlaybook);
+
+  // Handle drop from primitive library or playbook
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault();
 
-      const primitiveId = event.dataTransfer.getData("application/primitive");
-      if (!primitiveId || !primitives[primitiveId]) return;
-
-      const primitive = primitives[primitiveId];
       const position = screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
       });
+
+      // Check for playbook drop first
+      const playbookId = event.dataTransfer.getData("application/playbook");
+      if (playbookId) {
+        addPlaybook(playbookId, position);
+        return;
+      }
+
+      // Handle primitive drop
+      const primitiveId = event.dataTransfer.getData("application/primitive");
+      if (!primitiveId || !primitives[primitiveId]) return;
+
+      const primitive = primitives[primitiveId];
 
       const newNode: Node = {
         id: `${primitiveId.replace(/\./g, "-")}-${nanoid(6)}`,
@@ -106,7 +120,7 @@ function CanvasInner({ workflowId, initialGraph }: CanvasInnerProps) {
 
       addNode(newNode);
     },
-    [screenToFlowPosition, addNode]
+    [screenToFlowPosition, addNode, addPlaybook]
   );
 
   const onDragOver = useCallback((event: React.DragEvent) => {
@@ -132,8 +146,12 @@ function CanvasInner({ workflowId, initialGraph }: CanvasInnerProps) {
 
   // Connection validation
   const handleIsValidConnection = useCallback(
-    (connection: Connection) => {
-      return isValidConnection(connection);
+    (connection: Edge | Connection) => {
+      // Handle both Edge and Connection types
+      if ('source' in connection && 'target' in connection) {
+        return isValidConnection(connection as Connection);
+      }
+      return true;
     },
     [isValidConnection]
   );
@@ -230,7 +248,7 @@ function CanvasInner({ workflowId, initialGraph }: CanvasInnerProps) {
         snapToGrid
         snapGrid={[16, 16]}
         selectionOnDrag
-        selectionMode={1} // Partial selection
+        selectionMode={SelectionMode.Partial}
         multiSelectionKeyCode="Shift"
         defaultEdgeOptions={{
           animated: true,

@@ -120,7 +120,16 @@ export function Inspector({ className }: InspectorProps) {
   if (!selectedNode) {
     return (
       <div className={cn("flex flex-col bg-[hsl(0,0%,7%)]", className)}>
-        <EmptyState />
+        {/* Header - consistent with other panels */}
+        <div className="flex items-center justify-between px-3 py-2.5 flex-shrink-0">
+          <span className="text-[hsl(0,0%,65%)] text-[13px] font-medium">
+            Inspector
+          </span>
+        </div>
+        {/* Content area with centered empty state */}
+        <div className="flex-1 relative">
+          <EmptyState />
+        </div>
       </div>
     );
   }
@@ -391,7 +400,7 @@ function ConfigField({
           </label>
           {(schema.minimum !== undefined || schema.maximum !== undefined) && (
             <span className="text-[10px] text-[hsl(0,0%,35%)] tabular-nums">
-              {schema.minimum ?? "–"}–{schema.maximum ?? "–"}
+              {String(schema.minimum ?? "–")}–{String(schema.maximum ?? "–")}
             </span>
           )}
         </div>
@@ -482,11 +491,10 @@ function StateIndicator({ state }: { state: NodeState }) {
 
 function EmptyState() {
   return (
-    <div className="flex flex-col items-center justify-center h-full p-6 text-center">
-      <Settings className="w-8 h-8 text-[hsl(0,0%,20%)] mb-3" />
-      <p className="text-[13px] font-medium text-[hsl(0,0%,55%)] mb-1">No node selected</p>
-      <p className="text-[11px] text-[hsl(0,0%,35%)] max-w-[160px] leading-relaxed">
-        Select a node to view its configuration
+    <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center" style={{ top: '-10%' }}>
+      <p className="text-[13px] text-[hsl(0,0%,45%)]">No node selected</p>
+      <p className="text-[11px] text-[hsl(0,0%,30%)] mt-1">
+        Click a node to configure
       </p>
     </div>
   );

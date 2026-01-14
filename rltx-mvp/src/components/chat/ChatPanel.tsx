@@ -7,15 +7,23 @@ import { cn } from "@/lib/utils";
 import { Plus, History, ArrowUp, Loader2 } from "lucide-react";
 import { RLTXIcon } from "@/components/ui/RLTXIcon";
 
+interface WorkflowData {
+  id: string;
+  name: string;
+  nodeCount: number;
+  nodes: unknown[];
+  edges: unknown[];
+}
+
 interface ChatPanelProps {
   workflowId: string;
-  onWorkflowClick?: (workflowId: string) => void;
+  onWorkflowGenerated?: (workflow: WorkflowData) => void;
   className?: string;
 }
 
 export function ChatPanel({
   workflowId,
-  onWorkflowClick,
+  onWorkflowGenerated,
   className,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -93,7 +101,7 @@ export function ChatPanel({
   };
 
   const canSend = inputValue.trim() && !isGenerating;
-  const showSuggestions = messages.length === 0 && !inputValue;
+  const showSuggestions = messages.length === 0;
 
   const suggestions = [
     "Should we raise prices by 15%?",
@@ -131,35 +139,42 @@ export function ChatPanel({
         </div>
       </div>
 
-      {/* Messages area */}
-      <div className="flex-1 overflow-y-auto" ref={scrollRef}>
-        {messages.length === 0 ? (
-          // Empty state - just the logo centered
-          <div className="h-full flex items-center justify-center">
-            <RLTXIcon className="w-16 h-16 text-[hsl(0,0%,15%)]" />
-          </div>
-        ) : (
-          <div className="p-3 space-y-3">
-            {messages.map((message) => (
-              <ChatMessage
-                key={message.id}
-                message={message}
-                onWorkflowClick={onWorkflowClick}
-              />
-            ))}
-            {isGenerating && (
-              <div className="flex items-center gap-1.5 py-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-[hsl(0,0%,40%)] animate-pulse" />
-                <div className="w-1.5 h-1.5 rounded-full bg-[hsl(0,0%,40%)] animate-pulse" style={{ animationDelay: '150ms' }} />
-                <div className="w-1.5 h-1.5 rounded-full bg-[hsl(0,0%,40%)] animate-pulse" style={{ animationDelay: '300ms' }} />
-              </div>
-            )}
+      {/* Content area - wrapper for logo positioning */}
+      <div className="flex-1 flex flex-col relative min-h-0">
+        {/* Logo - positioned relative to entire content area to align with other panels */}
+        {messages.length === 0 && (
+          <div
+            className="absolute inset-0 flex items-center justify-center pointer-events-none"
+            style={{ top: '-10%' }}
+          >
+            <RLTXIcon className="w-10 h-10 text-[hsl(0,0%,18%)]" />
           </div>
         )}
-      </div>
 
-      {/* Input area - Cursor-style */}
-      <div className="px-3 pb-3 pt-2">
+        {/* Messages area */}
+        <div className="flex-1 overflow-y-auto" ref={scrollRef}>
+          {messages.length > 0 && (
+            <div className="px-3 py-3 space-y-3">
+              {messages.map((message) => (
+                <ChatMessage
+                  key={message.id}
+                  message={message}
+                  onWorkflowClick={onWorkflowGenerated}
+                />
+              ))}
+              {isGenerating && (
+                <div className="flex items-center gap-1 pt-1">
+                  <div className="w-1 h-1 rounded-full bg-[hsl(0,0%,45%)] animate-pulse" />
+                  <div className="w-1 h-1 rounded-full bg-[hsl(0,0%,45%)] animate-pulse" style={{ animationDelay: '150ms' }} />
+                  <div className="w-1 h-1 rounded-full bg-[hsl(0,0%,45%)] animate-pulse" style={{ animationDelay: '300ms' }} />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Input area - Cursor-style */}
+        <div className="px-3 pb-3 pt-2 flex-shrink-0">
         {/* Suggestions - above input */}
         {showSuggestions && (
           <div className="mb-3">
@@ -227,6 +242,7 @@ export function ChatPanel({
             <kbd className="px-1 py-0.5 rounded bg-[hsl(0,0%,10%)] font-mono text-[9px] text-[hsl(0,0%,40%)]">Enter</kbd>
             <span className="ml-1">to send</span>
           </span>
+        </div>
         </div>
       </div>
     </div>

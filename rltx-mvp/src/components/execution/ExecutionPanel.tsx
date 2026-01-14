@@ -82,7 +82,7 @@ export function ExecutionPanel() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-3">
+      <div className="flex-1 overflow-y-auto px-3 relative">
         {/* Status indicator - inline, subtle */}
         {executionStatus !== "idle" && (
           <div className="pb-4">
@@ -251,13 +251,12 @@ export function ExecutionPanel() {
 
         {/* Empty State */}
         {executionStatus === "idle" && (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <Activity className="w-10 h-10 text-[hsl(0,0%,18%)] mb-3" />
-            <p className="text-[13px] text-[hsl(0,0%,50%)] mb-1">
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-center" style={{ top: '-10%' }}>
+            <p className="text-[13px] text-[hsl(0,0%,45%)]">
               No execution running
             </p>
-            <p className="text-[11px] text-[hsl(0,0%,35%)]">
-              Run a workflow to see results
+            <p className="text-[11px] text-[hsl(0,0%,30%)] mt-1">
+              Run workflow to see results
             </p>
           </div>
         )}

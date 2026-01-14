@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import {
   Search,
   ChevronDown,
+  ChevronRight,
   // Data icons
   Globe,
   Database,
@@ -37,10 +38,16 @@ import {
   Split,
   Repeat,
   GitMerge,
+  // Playbook icons
+  BookOpen,
+  Puzzle,
+  DollarSign,
+  Network,
   type LucideIcon,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { primitives, type Primitive } from "@/lib/primitives";
+import { playbooks, playbookCategories, type Playbook, type PlaybookCategory } from "@/lib/playbooks";
 import { cn } from "@/lib/utils";
 
 // Comprehensive icon mapping - Linear style (clean, minimal)
@@ -85,6 +92,11 @@ const iconMap: Record<string, LucideIcon> = {
   Repeat,
   Merge: GitMerge,
   GitMerge,
+  // Playbook specific
+  BookOpen,
+  Puzzle,
+  DollarSign,
+  Share2,
 };
 
 // Category configuration with proper ordering
@@ -101,6 +113,14 @@ const categoryConfig: Record<string, {
   control: { label: "CONTROL", icon: Split, order: 6 },
 };
 
+// Playbook category icons
+const playbookCategoryIcons: Record<PlaybookCategory, LucideIcon> = {
+  strategy: Target,
+  operational: Users,
+  financial: DollarSign,
+  pattern: Puzzle,
+};
+
 interface PrimitiveLibraryProps {
   className?: string;
 }
@@ -110,7 +130,7 @@ export function PrimitiveLibrary({
 }: PrimitiveLibraryProps) {
   const [search, setSearch] = useState("");
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
-    new Set(Object.keys(categoryConfig))
+    new Set([...Object.keys(categoryConfig), "playbooks", "templates", "patterns"])
   );
 
   const toggleCategory = (category: string) => {
@@ -152,18 +172,63 @@ export function PrimitiveLibrary({
     return { groupedPrimitives: grouped, sortedCategories: sorted };
   }, [search]);
 
-  const onDragStart = (event: React.DragEvent, primitiveId: string) => {
+  // Filter and group playbooks
+  const { filteredTemplates, filteredPatterns } = useMemo(() => {
+    const searchLower = search.toLowerCase();
+
+    const allPlaybooks = Object.values(playbooks);
+
+    const templates = allPlaybooks.filter(
+      (p) => p.type === "template" && (
+        p.name.toLowerCase().includes(searchLower) ||
+        p.description.toLowerCase().includes(searchLower) ||
+        p.tags.some(t => t.toLowerCase().includes(searchLower))
+      )
+    );
+
+    const patterns = allPlaybooks.filter(
+      (p) => p.type === "pattern" && (
+        p.name.toLowerCase().includes(searchLower) ||
+        p.description.toLowerCase().includes(searchLower) ||
+        p.tags.some(t => t.toLowerCase().includes(searchLower))
+      )
+    );
+
+    return { filteredTemplates: templates, filteredPatterns: patterns };
+  }, [search]);
+
+  // Group templates by category
+  const templatesByCategory = useMemo(() => {
+    const grouped: Record<string, Playbook[]> = {};
+    filteredTemplates.forEach((t) => {
+      if (!grouped[t.category]) {
+        grouped[t.category] = [];
+      }
+      grouped[t.category].push(t);
+    });
+    return grouped;
+  }, [filteredTemplates]);
+
+  const onPrimitiveDragStart = (event: React.DragEvent, primitiveId: string) => {
     event.dataTransfer.setData("application/primitive", primitiveId);
     event.dataTransfer.effectAllowed = "move";
   };
+
+  const onPlaybookDragStart = (event: React.DragEvent, playbookId: string) => {
+    event.dataTransfer.setData("application/playbook", playbookId);
+    event.dataTransfer.effectAllowed = "move";
+  };
+
+  const hasPlaybookResults = filteredTemplates.length > 0 || filteredPatterns.length > 0;
+  const showPlaybooks = !search || hasPlaybookResults;
 
   return (
     <div className={cn(
       "flex flex-col h-full bg-[hsl(0,0%,7%)]",
       className
     )}>
-      {/* Search - with space for collapse button on right */}
-      <div className="p-2.5 pr-10">
+      {/* Search */}
+      <div className="p-2.5">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[hsl(0,0%,40%)]" />
           <Input
@@ -175,8 +240,122 @@ export function PrimitiveLibrary({
         </div>
       </div>
 
-      {/* Categories List */}
+      {/* Content */}
       <div className="flex-1 overflow-y-auto px-1.5">
+        {/* Playbooks Section */}
+        {showPlaybooks && (
+          <div className="mb-2">
+            {/* Playbooks Header */}
+            <button
+              onClick={() => toggleCategory("playbooks")}
+              className="flex items-center gap-1.5 w-full px-1.5 py-1.5 text-[hsl(0,0%,50%)] hover:text-[hsl(0,0%,65%)] transition-colors"
+            >
+              <ChevronDown
+                className={cn(
+                  "w-3 h-3 transition-transform duration-100",
+                  !expandedCategories.has("playbooks") && "-rotate-90"
+                )}
+              />
+              <BookOpen className="w-3.5 h-3.5" />
+              <span className="text-[11px] font-medium tracking-wide">
+                PLAYBOOKS
+              </span>
+            </button>
+
+            {expandedCategories.has("playbooks") && (
+              <div className="ml-1">
+                {/* Templates Sub-section */}
+                {filteredTemplates.length > 0 && (
+                  <div className="mt-1">
+                    <button
+                      onClick={() => toggleCategory("templates")}
+                      className="flex items-center gap-1.5 w-full px-1.5 py-1 text-[hsl(0,0%,40%)] hover:text-[hsl(0,0%,55%)] transition-colors"
+                    >
+                      <ChevronRight
+                        className={cn(
+                          "w-2.5 h-2.5 transition-transform duration-100",
+                          expandedCategories.has("templates") && "rotate-90"
+                        )}
+                      />
+                      <span className="text-[10px] font-medium tracking-wide uppercase">
+                        Templates
+                      </span>
+                      <span className="text-[9px] text-[hsl(0,0%,30%)] ml-auto">
+                        {filteredTemplates.length}
+                      </span>
+                    </button>
+
+                    {expandedCategories.has("templates") && (
+                      <div className="ml-2">
+                        {Object.entries(templatesByCategory).map(([category, templates]) => (
+                          <div key={category} className="mt-1">
+                            <div className="flex items-center gap-1.5 px-1.5 py-0.5">
+                              {(() => {
+                                const CategoryIcon = playbookCategoryIcons[category as PlaybookCategory] || Target;
+                                return <CategoryIcon className="w-3 h-3 text-[hsl(0,0%,30%)]" />;
+                              })()}
+                              <span className="text-[9px] text-[hsl(0,0%,35%)] uppercase tracking-wide">
+                                {playbookCategories[category as PlaybookCategory]?.label || category}
+                              </span>
+                            </div>
+                            {templates.map((playbook) => (
+                              <PlaybookItem
+                                key={playbook.id}
+                                playbook={playbook}
+                                onDragStart={onPlaybookDragStart}
+                              />
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Patterns Sub-section */}
+                {filteredPatterns.length > 0 && (
+                  <div className="mt-1">
+                    <button
+                      onClick={() => toggleCategory("patterns")}
+                      className="flex items-center gap-1.5 w-full px-1.5 py-1 text-[hsl(0,0%,40%)] hover:text-[hsl(0,0%,55%)] transition-colors"
+                    >
+                      <ChevronRight
+                        className={cn(
+                          "w-2.5 h-2.5 transition-transform duration-100",
+                          expandedCategories.has("patterns") && "rotate-90"
+                        )}
+                      />
+                      <Puzzle className="w-3 h-3" />
+                      <span className="text-[10px] font-medium tracking-wide uppercase">
+                        Patterns
+                      </span>
+                      <span className="text-[9px] text-[hsl(0,0%,30%)] ml-auto">
+                        {filteredPatterns.length}
+                      </span>
+                    </button>
+
+                    {expandedCategories.has("patterns") && (
+                      <div className="ml-2">
+                        {filteredPatterns.map((playbook) => (
+                          <PlaybookItem
+                            key={playbook.id}
+                            playbook={playbook}
+                            onDragStart={onPlaybookDragStart}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Divider */}
+            <div className="h-px bg-[hsl(0,0%,12%)] mx-1.5 my-2" />
+          </div>
+        )}
+
+        {/* Primitives Categories */}
         {sortedCategories.map((categoryKey) => {
           const config = categoryConfig[categoryKey];
           const categoryPrimitives = groupedPrimitives[categoryKey] || [];
@@ -210,7 +389,7 @@ export function PrimitiveLibrary({
                       <div
                         key={primitive.id}
                         draggable
-                        onDragStart={(e) => onDragStart(e, primitive.id)}
+                        onDragStart={(e) => onPrimitiveDragStart(e, primitive.id)}
                         className={cn(
                           "group/item flex items-center gap-2 px-1.5 py-[5px] rounded",
                           "cursor-grab active:cursor-grabbing",
@@ -237,6 +416,48 @@ export function PrimitiveLibrary({
           Drag to canvas
         </p>
       </div>
+    </div>
+  );
+}
+
+// Playbook item component
+function PlaybookItem({
+  playbook,
+  onDragStart,
+}: {
+  playbook: Playbook;
+  onDragStart: (e: React.DragEvent, id: string) => void;
+}) {
+  const IconComponent = iconMap[playbook.icon] || BookOpen;
+  const nodeCount = playbook.nodes.length;
+
+  return (
+    <div
+      draggable
+      onDragStart={(e) => onDragStart(e, playbook.id)}
+      className={cn(
+        "group/item flex items-center gap-2 px-1.5 py-[5px] rounded",
+        "cursor-grab active:cursor-grabbing",
+        "hover:bg-[hsl(0,0%,10%)] transition-colors duration-100"
+      )}
+    >
+      <div
+        className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0"
+        style={{ backgroundColor: `${playbook.color}20` }}
+      >
+        <IconComponent
+          className="w-3 h-3"
+          style={{ color: playbook.color }}
+        />
+      </div>
+      <div className="flex-1 min-w-0">
+        <span className="text-[12px] text-[hsl(0,0%,75%)] truncate block">
+          {playbook.name}
+        </span>
+      </div>
+      <span className="text-[9px] text-[hsl(0,0%,35%)] tabular-nums">
+        {nodeCount}n
+      </span>
     </div>
   );
 }
