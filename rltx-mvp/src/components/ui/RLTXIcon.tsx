@@ -1,0 +1,32 @@
+export function RLTXIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 148 148"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+    >
+      <circle cx="73.2059" cy="74.0008" r="12.2136" fill="currentColor" />
+      <circle cx="105.339" cy="74.0008" r="12.2136" fill="currentColor" />
+      <circle cx="41.0698" cy="74.0008" r="12.2136" fill="currentColor" />
+      <circle cx="73.2059" cy="41.4681" r="12.2136" fill="currentColor" />
+      <circle cx="73.2059" cy="106.532" r="12.2136" fill="currentColor" />
+      <circle cx="41.0689" cy="106.533" r="8.93572" fill="currentColor" />
+      <circle cx="105.338" cy="106.533" r="8.93572" fill="currentColor" />
+      <circle cx="137.475" cy="74.001" r="8.93572" fill="currentColor" />
+      <circle cx="8.93575" cy="74.001" r="8.93572" fill="currentColor" />
+      <circle cx="73.2051" cy="139.064" r="8.93572" fill="currentColor" />
+      <circle cx="73.2051" cy="8.93572" r="8.93572" fill="currentColor" />
+      <circle cx="137.477" cy="106.533" r="4.43166" fill="currentColor" />
+      <circle cx="137.477" cy="41.4688" r="4.43166" fill="currentColor" />
+      <circle cx="105.34" cy="139.064" r="4.43166" fill="currentColor" />
+      <circle cx="41.0704" cy="139.064" r="4.43166" fill="currentColor" />
+      <circle cx="41.0704" cy="8.93617" r="4.43166" fill="currentColor" />
+      <circle cx="105.34" cy="8.93617" r="4.43166" fill="currentColor" />
+      <circle cx="8.93425" cy="41.4678" r="4.43166" fill="currentColor" />
+      <circle cx="8.93425" cy="106.533" r="4.43166" fill="currentColor" />
+      <circle cx="105.338" cy="41.4673" r="8.93572" fill="currentColor" />
+      <circle cx="41.0689" cy="41.4673" r="8.93572" fill="currentColor" />
+    </svg>
+  );
+}
