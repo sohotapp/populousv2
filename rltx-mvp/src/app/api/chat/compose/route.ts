@@ -346,27 +346,12 @@ export async function POST(request: NextRequest) {
       if (jsonText.startsWith("```")) {
         jsonText = jsonText.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
       }
-
-      // If there's text before the JSON, try to extract just the JSON
-      const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        jsonText = jsonMatch[0];
-      }
-
       parsed = JSON.parse(jsonText);
     } catch (e) {
       console.error("[Compose API] JSON parse error:", e);
-
-      // Try to extract conversational text before any JSON
-      let cleanText = content.text;
-      const jsonStartIdx = cleanText.indexOf('\n{');
-      if (jsonStartIdx > 0) {
-        cleanText = cleanText.slice(0, jsonStartIdx).trim();
-      }
-
       // Return as plain conversational message
       return NextResponse.json({
-        message: cleanText,
+        message: content.text,
         intent: 'explain',
         workflow: null,
       });

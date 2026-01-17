@@ -12,39 +12,9 @@ interface ChatMessageProps {
   isWorkflowLoaded?: boolean;
 }
 
-// Clean message content - strip any raw JSON that leaked through
-function cleanMessageContent(text: string): string {
-  // If the message contains raw JSON object markers, strip them
-  // This handles cases where the API response leaked JSON into the message
-  const jsonStartIndex = text.indexOf('\n{');
-  if (jsonStartIndex > 0) {
-    // Check if this looks like leaked JSON (has "message": or "intent":)
-    const afterJson = text.slice(jsonStartIndex);
-    if (afterJson.includes('"message"') || afterJson.includes('"intent"') || afterJson.includes('"workflow"')) {
-      return text.slice(0, jsonStartIndex).trim();
-    }
-  }
-
-  // Also check for JSON at the start
-  const trimmed = text.trim();
-  if (trimmed.startsWith('{') && (trimmed.includes('"message"') || trimmed.includes('"intent"'))) {
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (parsed.message && typeof parsed.message === 'string') {
-        return parsed.message;
-      }
-    } catch {
-      // Not valid JSON, return as-is
-    }
-  }
-
-  return text;
-}
-
 // Simple markdown renderer for chat messages
 function renderMarkdown(text: string): React.ReactNode[] {
-  const cleanedText = cleanMessageContent(text);
-  const lines = cleanedText.split('\n');
+  const lines = text.split('\n');
   const elements: React.ReactNode[] = [];
 
   lines.forEach((line, lineIndex) => {

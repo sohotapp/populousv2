@@ -179,8 +179,6 @@ async function pollForResult(
 
 /**
  * Store VIP data in Supabase with ALL fields properly populated
- *
- * CRITICAL: Store the ACTUAL raw API response for future reprocessing
  */
 async function storeInSupabase(
   vip: VIPSeed,
@@ -188,60 +186,70 @@ async function storeInSupabase(
   credits: number
 ): Promise<boolean> {
   try {
-    // 1. Extract display name
-    const displayname = (rawData.displayname as string) ||
-      `${rawData.firstname || ""} ${rawData.lastname || ""}`.trim() ||
-      vip.name;
+    // Extract key fields from raw data
+    const displayname = rawData.displayname as string ||
+                       `${rawData.firstname || ""} ${rawData.lastname || ""}`.trim() ||
+                       vip.name;
 
-    // 2. Extract biography from multiple sources
     const biography = (rawData.summary as string) ||
-      (rawData.bio as string) ||
-      (rawData.headline as string) || "";
+                     (rawData.bio as string) ||
+                     (rawData.headline as string) || "";
 
-    // 3. Find current organization
     const organizations = (rawData.organizations as Array<Record<string, unknown>>) || [];
     const currentOrg = organizations.find(o =>
       o.endDate === "Present" || (o as any).endDate_formatted?.is_current
     ) || organizations[0];
 
-    const currentRole = (currentOrg?.title as string) || "";
-    const organization = (currentOrg?.name as string) || vip.affiliation;
+    const currentRole = currentOrg?.title as string || "";
+    const organization = currentOrg?.name as string || vip.affiliation;
 
-    // 4. Extract newsfeed (raw array)
+    // Extract newsfeed if present (Tier A)
     const newsfeed = rawData.newsfeed as Array<Record<string, unknown>> | undefined;
+    const newsfeedData = newsfeed && newsfeed.length > 0 ? {
+      person_id: `nyne-${vip.name.toLowerCase().replace(/\s/g, "-")}`,
+      name: displayname,
+      recent_content: newsfeed.slice(0, 10).map(post => ({
+        text: post.content || post.text || "",
+        source: post.source || "linkedin",
+        date: post.timestamp || new Date().toISOString(),
+        engagement: ((post.likes as number) || 0) + ((post.comments as number) || 0),
+        sentiment: 0.5,
+      })),
+      communication_style: { formality: 0.7, emotionality: 0.4, assertiveness: 0.6 }
+    } : null;
 
-    // 5. Extract sample content - top 5 posts for quick reference
-    const sampleContent = newsfeed?.slice(0, 5).map(p =>
-      ((p.content || p.text) as string) || ""
-    ).filter(Boolean) || [];
+    // Build enrichment structure
+    const enrichmentData = {
+      person_id: `nyne-${vip.name.toLowerCase().replace(/\s/g, "-")}`,
+      name: displayname,
+      biography,
+      current_role: currentRole,
+      organization,
+      location: rawData.location as string || "",
+      gender: rawData.gender as string || "",
+      headline: rawData.headline as string || "",
+      summary: rawData.summary as string || "",
+      altemails: rawData.altemails as string[] || [],
+      fullphone: rawData.fullphone as Array<{fullphone: string}> || [],
+      social_profiles: rawData.social_profiles || {},
+      career_history: organizations.slice(0, 5).map(o => ({
+        role: o.title || "",
+        organization: o.name || "",
+        years: `${o.startDate || "?"}-${o.endDate || "Present"}`
+      })),
+      education: ((rawData.schools_info as Array<Record<string, unknown>>) || []).map(s =>
+        [s.degree, s.fieldOfStudy, s.name].filter(Boolean).join(" - ")
+      ),
+      schools_info: rawData.schools_info || [],
+      organizations: rawData.organizations || [],
+    };
 
-    // 6. Calculate communication style from newsfeed
-    let communicationStyle: string | null = null;
-    if (newsfeed && newsfeed.length > 0) {
-      const allText = newsfeed.map(p => ((p.content || p.text) as string) || "").join(" ").toLowerCase();
-      const wordCount = allText.split(/\s+/).length;
-      const avgSentenceLength = wordCount / Math.max(1, (allText.match(/[.!?]/g) || []).length);
-
-      const style = {
-        formality: Math.min(0.95, 0.5 + avgSentenceLength / 50),
-        emotionality: Math.min(0.9, 0.2 + (allText.match(/!|amazing|excited|thrilled|proud|love|hate|terrible/g) || []).length / 20),
-        assertiveness: Math.min(0.9, 0.4 + (allText.match(/\bi\s|\bwe\s|will|must|should|believe|commit/g) || []).length / 30),
-      };
-      communicationStyle = JSON.stringify(style);
-    }
-
-    // 7. Log match confidence
-    const probability = rawData.probability as string;
     console.log(`[DB] Storing ${vip.name}...`);
-    console.log(`[DB] - Match confidence: ${probability || "unknown"}`);
-    console.log(`[DB] - Biography: ${biography.length} chars`);
+    console.log(`[DB] - Biography: ${biography.substring(0, 50)}...`);
     console.log(`[DB] - Career entries: ${organizations.length}`);
-    console.log(`[DB] - Education entries: ${((rawData.schools_info as unknown[]) || []).length}`);
     console.log(`[DB] - Newsfeed posts: ${newsfeed?.length || 0}`);
-    console.log(`[DB] - Sample content: ${sampleContent.length} posts`);
-    console.log(`[DB] - Communication style: ${communicationStyle ? "calculated" : "null"}`);
 
-    // 8. Upsert to Supabase - Store ACTUAL raw API response
+    // Upsert to Supabase
     await db.insert(vipAgents).values({
       nyneId: vip.id,
       name: displayname,
@@ -251,17 +259,9 @@ async function storeInSupabase(
       role: currentRole || vip.role,
       affiliation: organization || vip.affiliation,
       priorityRank: vip.priorityRank,
-
-      // Extracted content
       biography: biography || null,
-      sampleContent: sampleContent.length > 0 ? sampleContent : null,
-      communicationStyle: communicationStyle,
-
-      // RAW DATA - Store ACTUAL API response for future reprocessing
-      nyneRawEnrichment: rawData,  // FULL raw response - preserves ALL fields
-      nyneRawNewsfeed: newsfeed || null,  // Raw newsfeed array
-
-      // Tracking
+      nyneRawEnrichment: enrichmentData as unknown as Record<string, unknown>,
+      nyneRawNewsfeed: newsfeedData as unknown as Record<string, unknown>,
       collectionStatus: "complete",
       creditsUsed: credits,
       lastSyncedAt: new Date(),
@@ -272,10 +272,8 @@ async function storeInSupabase(
         role: currentRole || vip.role,
         affiliation: organization || vip.affiliation,
         biography: biography || null,
-        sampleContent: sampleContent.length > 0 ? sampleContent : null,
-        communicationStyle: communicationStyle,
-        nyneRawEnrichment: rawData,  // FULL raw response
-        nyneRawNewsfeed: newsfeed || null,
+        nyneRawEnrichment: enrichmentData as unknown as Record<string, unknown>,
+        nyneRawNewsfeed: newsfeedData as unknown as Record<string, unknown>,
         collectionStatus: "complete",
         creditsUsed: credits,
         lastSyncedAt: new Date(),
@@ -292,7 +290,7 @@ async function storeInSupabase(
       status: "success",
     });
 
-    console.log(`[DB] ✓ Stored successfully with ${Object.keys(rawData).length} raw fields preserved`);
+    console.log(`[DB] ✓ Stored successfully`);
     return true;
 
   } catch (error) {

@@ -11,50 +11,6 @@ import {
 
 import { US_CENSUS_2022, sampleConditional } from "./seed-data/us-census-2022";
 
-// Big Five Personality profile
-export interface BigFiveProfile {
-  openness: number;          // 0-1
-  conscientiousness: number; // 0-1
-  extraversion: number;      // 0-1
-  agreeableness: number;     // 0-1
-  neuroticism: number;       // 0-1
-}
-
-// Schwartz Values profile
-export interface ValuesProfile {
-  selfDirection: number;
-  stimulation: number;
-  hedonism: number;
-  achievement: number;
-  power: number;
-  security: number;
-  conformity: number;
-  tradition: number;
-  benevolence: number;
-  universalism: number;
-}
-
-// Cognitive biases (continuous 0-1)
-export interface CognitiveBiasesProfile {
-  lossAversion: number;
-  statusQuoBias: number;
-  anchoringBias: number;
-  confirmationBias: number;
-  availabilityBias: number;
-  socialProof: number;
-  overconfidence: number;
-}
-
-// Behavioral traits (continuous 0-1)
-export interface BehavioralTraitsProfile {
-  riskTolerance: number;
-  priceElasticity: number;
-  brandLoyalty: number;
-  qualityOrientation: number;
-  timeDiscountRate: number;
-  authorityDeference: number;
-}
-
 export interface AgentProfile {
   id: string;
   demographics: {
@@ -73,25 +29,10 @@ export interface AgentProfile {
     brandLoyalty?: string;
     techAdoption?: string;
   };
-  // Psychographic profiles (SCOPE-inspired)
-  psychographics?: {
-    bigFive: BigFiveProfile;
-    values: ValuesProfile;
-    biases: CognitiveBiasesProfile;
-    traits: BehavioralTraitsProfile;
-  };
   // Weight for aggregation (for archetype sampling)
   weight: number;
   // Human-readable description
   description: string;
-}
-
-// Psychographic configuration from UI
-export interface PsychographicConfig {
-  bigFive?: Partial<BigFiveProfile>;
-  values?: Partial<ValuesProfile>;
-  biases?: Partial<CognitiveBiasesProfile>;
-  traits?: Partial<BehavioralTraitsProfile>;
 }
 
 export interface SamplingOptions {
@@ -115,10 +56,6 @@ export interface SamplingOptions {
   seed?: number;
   // Use conditional distributions for realistic correlations (default: true)
   useConditionals?: boolean;
-  // Psychographic configuration (center values with variance)
-  psychographics?: PsychographicConfig;
-  // Variance for psychographic sampling (0-0.3, default 0.15)
-  psychographicVariance?: number;
 }
 
 export interface SamplingResult {
@@ -148,116 +85,6 @@ class SeededRandom {
     this.seed = (this.seed * 1664525 + 1013904223) % 4294967296;
     return this.seed / 4294967296;
   }
-
-  // Box-Muller for normal distribution
-  nextGaussian(mean: number = 0, stdDev: number = 1): number {
-    const u1 = this.next();
-    const u2 = this.next();
-    const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
-    return z0 * stdDev + mean;
-  }
-}
-
-// Clamp value between 0 and 1
-function clamp01(value: number): number {
-  return Math.max(0, Math.min(1, value));
-}
-
-// Generate psychographic profile with variance around center values
-function generatePsychographics(
-  rng: SeededRandom,
-  config?: PsychographicConfig,
-  variance: number = 0.15
-): AgentProfile["psychographics"] {
-  // Default Big Five (population average)
-  const defaultBigFive: BigFiveProfile = {
-    openness: 0.5,
-    conscientiousness: 0.5,
-    extraversion: 0.5,
-    agreeableness: 0.5,
-    neuroticism: 0.5,
-  };
-
-  // Default Schwartz Values
-  const defaultValues: ValuesProfile = {
-    selfDirection: 0.5,
-    stimulation: 0.5,
-    hedonism: 0.5,
-    achievement: 0.5,
-    power: 0.4,
-    security: 0.6,
-    conformity: 0.5,
-    tradition: 0.5,
-    benevolence: 0.55,
-    universalism: 0.5,
-  };
-
-  // Default cognitive biases (typical human)
-  const defaultBiases: CognitiveBiasesProfile = {
-    lossAversion: 0.7,      // 2.5x typical
-    statusQuoBias: 0.6,
-    anchoringBias: 0.6,
-    confirmationBias: 0.55,
-    availabilityBias: 0.6,
-    socialProof: 0.65,
-    overconfidence: 0.5,
-  };
-
-  // Default behavioral traits
-  const defaultTraits: BehavioralTraitsProfile = {
-    riskTolerance: 0.4,
-    priceElasticity: 0.6,
-    brandLoyalty: 0.5,
-    qualityOrientation: 0.5,
-    timeDiscountRate: 0.6,
-    authorityDeference: 0.5,
-  };
-
-  // Generate Big Five with variance
-  const bigFive: BigFiveProfile = {
-    openness: clamp01(rng.nextGaussian(config?.bigFive?.openness ?? defaultBigFive.openness, variance)),
-    conscientiousness: clamp01(rng.nextGaussian(config?.bigFive?.conscientiousness ?? defaultBigFive.conscientiousness, variance)),
-    extraversion: clamp01(rng.nextGaussian(config?.bigFive?.extraversion ?? defaultBigFive.extraversion, variance)),
-    agreeableness: clamp01(rng.nextGaussian(config?.bigFive?.agreeableness ?? defaultBigFive.agreeableness, variance)),
-    neuroticism: clamp01(rng.nextGaussian(config?.bigFive?.neuroticism ?? defaultBigFive.neuroticism, variance)),
-  };
-
-  // Generate Values with variance
-  const values: ValuesProfile = {
-    selfDirection: clamp01(rng.nextGaussian(config?.values?.selfDirection ?? defaultValues.selfDirection, variance)),
-    stimulation: clamp01(rng.nextGaussian(config?.values?.stimulation ?? defaultValues.stimulation, variance)),
-    hedonism: clamp01(rng.nextGaussian(config?.values?.hedonism ?? defaultValues.hedonism, variance)),
-    achievement: clamp01(rng.nextGaussian(config?.values?.achievement ?? defaultValues.achievement, variance)),
-    power: clamp01(rng.nextGaussian(config?.values?.power ?? defaultValues.power, variance)),
-    security: clamp01(rng.nextGaussian(config?.values?.security ?? defaultValues.security, variance)),
-    conformity: clamp01(rng.nextGaussian(config?.values?.conformity ?? defaultValues.conformity, variance)),
-    tradition: clamp01(rng.nextGaussian(config?.values?.tradition ?? defaultValues.tradition, variance)),
-    benevolence: clamp01(rng.nextGaussian(config?.values?.benevolence ?? defaultValues.benevolence, variance)),
-    universalism: clamp01(rng.nextGaussian(config?.values?.universalism ?? defaultValues.universalism, variance)),
-  };
-
-  // Generate biases with variance
-  const biases: CognitiveBiasesProfile = {
-    lossAversion: clamp01(rng.nextGaussian(config?.biases?.lossAversion ?? defaultBiases.lossAversion, variance)),
-    statusQuoBias: clamp01(rng.nextGaussian(config?.biases?.statusQuoBias ?? defaultBiases.statusQuoBias, variance)),
-    anchoringBias: clamp01(rng.nextGaussian(config?.biases?.anchoringBias ?? defaultBiases.anchoringBias, variance)),
-    confirmationBias: clamp01(rng.nextGaussian(config?.biases?.confirmationBias ?? defaultBiases.confirmationBias, variance)),
-    availabilityBias: clamp01(rng.nextGaussian(config?.biases?.availabilityBias ?? defaultBiases.availabilityBias, variance)),
-    socialProof: clamp01(rng.nextGaussian(config?.biases?.socialProof ?? defaultBiases.socialProof, variance)),
-    overconfidence: clamp01(rng.nextGaussian(config?.biases?.overconfidence ?? defaultBiases.overconfidence, variance)),
-  };
-
-  // Generate traits with variance
-  const traits: BehavioralTraitsProfile = {
-    riskTolerance: clamp01(rng.nextGaussian(config?.traits?.riskTolerance ?? defaultTraits.riskTolerance, variance)),
-    priceElasticity: clamp01(rng.nextGaussian(config?.traits?.priceElasticity ?? defaultTraits.priceElasticity, variance)),
-    brandLoyalty: clamp01(rng.nextGaussian(config?.traits?.brandLoyalty ?? defaultTraits.brandLoyalty, variance)),
-    qualityOrientation: clamp01(rng.nextGaussian(config?.traits?.qualityOrientation ?? defaultTraits.qualityOrientation, variance)),
-    timeDiscountRate: clamp01(rng.nextGaussian(config?.traits?.timeDiscountRate ?? defaultTraits.timeDiscountRate, variance)),
-    authorityDeference: clamp01(rng.nextGaussian(config?.traits?.authorityDeference ?? defaultTraits.authorityDeference, variance)),
-  };
-
-  return { bigFive, values, biases, traits };
 }
 
 // Sample from a discrete distribution
@@ -502,19 +329,12 @@ function generateAgent(
   rng: SeededRandom,
   filters?: SamplingOptions["filters"],
   weight = 1.0,
-  useConditionals = true,
-  psychographicConfig?: PsychographicConfig,
-  psychographicVariance = 0.15
+  useConditionals = true
 ): AgentProfile {
-  // Generate base agent
-  const agent = useConditionals
-    ? generateAgentConditional(population, rng, filters, weight)
-    : generateAgentIndependent(population, rng, filters, weight);
-
-  // Add psychographics
-  agent.psychographics = generatePsychographics(rng, psychographicConfig, psychographicVariance);
-
-  return agent;
+  if (useConditionals) {
+    return generateAgentConditional(population, rng, filters, weight);
+  }
+  return generateAgentIndependent(population, rng, filters, weight);
 }
 
 // Generate archetype key from demographics for clustering
@@ -614,25 +434,15 @@ export function samplePopulation(options: SamplingOptions): SamplingResult {
     filters,
     seed,
     useConditionals = true,
-    psychographics,
-    psychographicVariance = 0.15,
   } = options;
 
   const population = getPopulation(populationId);
   const rng = new SeededRandom(seed);
 
-  // Generate raw agents with psychographics
+  // Generate raw agents
   const rawAgents: AgentProfile[] = [];
   for (let i = 0; i < sampleSize; i++) {
-    rawAgents.push(generateAgent(
-      population,
-      rng,
-      filters,
-      1.0,
-      useConditionals,
-      psychographics,
-      psychographicVariance
-    ));
+    rawAgents.push(generateAgent(population, rng, filters, 1.0, useConditionals));
   }
 
   let finalAgents: AgentProfile[];

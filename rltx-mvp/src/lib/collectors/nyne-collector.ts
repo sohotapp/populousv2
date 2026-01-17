@@ -899,6 +899,149 @@ export class NyneCollector {
   // API Methods (with mock fallback)
 
   /**
+   * Get person newsfeed - requires social_media_url (async with polling)
+   */
+  private async getPersonNewsfeed(name: string, socialUrl: string): Promise<NyneNewsfeed> {
+    if (!this.apiKey) {
+      return this.mockPersonNewsfeed(name);
+    }
+
+    console.log(`[NyneCollector] Fetching newsfeed for ${name}...`);
+
+    const response = await fetch(`${this.baseUrl}/person/newsfeed`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": this.apiKey,
+        "X-API-Secret": this.apiSecret,
+      },
+      body: JSON.stringify({ social_media_url: socialUrl }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Newsfeed API error: ${response.status} - ${errorText}`);
+    }
+
+    const result = await response.json();
+
+    // Handle async response (queued)
+    if (result.data?.status === "queued" && result.data?.request_id) {
+      console.log(`[NyneCollector] Newsfeed queued, polling for results...`);
+      return this.pollNewsfeedResults(result.data.request_id, name);
+    }
+
+    return this.transformNewsfeedResult(result, name);
+  }
+
+  /**
+   * Poll for newsfeed results
+   */
+  private async pollNewsfeedResults(requestId: string, name: string, maxAttempts = 15): Promise<NyneNewsfeed> {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      await this.sleep(2000);
+
+      try {
+        const response = await fetch(`${this.baseUrl}/person/newsfeed?request_id=${requestId}`, {
+          method: "GET",
+          headers: {
+            "X-API-Key": this.apiKey,
+            "X-API-Secret": this.apiSecret,
+          },
+        });
+
+        if (!response.ok) continue;
+
+        const result = await response.json();
+
+        if (result.data?.status === "completed" || result.data?.result) {
+          console.log(`[NyneCollector] Newsfeed completed for ${name}`);
+          return this.transformNewsfeedResult(result, name);
+        }
+
+        if (result.data?.status === "failed") {
+          console.error(`[NyneCollector] Newsfeed failed: ${result.data?.error}`);
+          return this.mockPersonNewsfeed(name);
+        }
+
+        console.log(`[NyneCollector] Polling newsfeed... attempt ${attempt + 1}/${maxAttempts}`);
+      } catch (error) {
+        console.error(`[NyneCollector] Newsfeed poll error: ${error}`);
+      }
+    }
+
+    console.warn(`[NyneCollector] Newsfeed timeout for ${name}`);
+    return this.mockPersonNewsfeed(name);
+  }
+
+  /**
+   * Transform newsfeed API result from nyne.ai format
+   */
+  private transformNewsfeedResult(result: unknown, name: string): NyneNewsfeed {
+    const data = (result as { data?: { result?: { newsfeed?: unknown[] }; newsfeed?: unknown[] } })?.data;
+
+    // Extract newsfeed posts - can be in data.result.newsfeed or data.newsfeed
+    const rawPosts = data?.result?.newsfeed || data?.newsfeed || [];
+    const posts = rawPosts as Array<{
+      content?: string;
+      text?: string;
+      timestamp?: string;
+      date?: string;
+      likes?: number;
+      engagement?: number;
+      comments?: number;
+      shares?: number;
+      source?: string;
+    }>;
+
+    // Transform to our format
+    const recentContent: NyneNewsfeed["recent_content"] = [];
+    for (const post of posts.slice(0, 10)) {
+      recentContent.push({
+        text: post.content || post.text || "",
+        source: post.source || "unknown",
+        date: post.timestamp || post.date || new Date().toISOString(),
+        engagement: (post.likes || 0) + (post.comments || 0) + (post.shares || 0),
+        sentiment: 0.5, // Default neutral
+      });
+    }
+
+    // Analyze communication style from posts
+    let formality = 0.7;
+    let emotionality = 0.3;
+    let assertiveness = 0.6;
+
+    if (recentContent.length > 0) {
+      // Simple heuristics based on content
+      const allText = recentContent.map(p => p.text).join(" ").toLowerCase();
+      const wordCount = allText.split(/\s+/).length;
+
+      // Formality: longer sentences = more formal
+      const avgSentenceLength = wordCount / Math.max(1, (allText.match(/[.!?]/g) || []).length);
+      formality = Math.min(0.95, 0.5 + avgSentenceLength / 50);
+
+      // Emotionality: exclamation marks and emotional words
+      const emotionalIndicators = (allText.match(/!|amazing|excited|thrilled|proud|love|hate|terrible/g) || []).length;
+      emotionality = Math.min(0.9, 0.2 + emotionalIndicators / 20);
+
+      // Assertiveness: first person pronouns and strong verbs
+      const assertiveIndicators = (allText.match(/\bi\s|\bwe\s|will|must|should|believe|commit/g) || []).length;
+      assertiveness = Math.min(0.9, 0.4 + assertiveIndicators / 30);
+    }
+
+    return {
+      person_id: `nyne-${name.toLowerCase().replace(/\s/g, "-")}`,
+      name,
+      recent_content: recentContent,
+      communication_style: {
+        formality,
+        emotionality,
+        assertiveness,
+      },
+    };
+  }
+
+  /**
    * OPTIMIZED: Get person enrichment with optional newsfeed in single API call
    *
    * This is the recommended approach per nyne.ai founder guidance:

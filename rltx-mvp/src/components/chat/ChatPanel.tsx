@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useChatStore } from "@/stores/chat";
 import { useCanvasStore } from "@/stores/canvas";
 import { ChatMessage } from "./ChatMessage";
@@ -191,43 +191,13 @@ export function ChatPanel({
     "How would Congress vote on a TikTok ban?",
   ];
 
-  // Generate contextual follow-up suggestions based on conversation and workflow
-  const followUpSuggestions = useMemo(() => {
-    if (!hasWorkflowOnCanvas) return [];
-
-    const lastMessage = messages[messages.length - 1];
-    const lastContent = lastMessage?.content?.toLowerCase() || '';
-    const nodeTypes = canvasStore.nodes.map(n =>
-      (n.data as { primitiveId?: string })?.primitiveId || ''
-    );
-
-    const hasSegmentation = nodeTypes.some(t => t.includes('segment'));
-    const hasGameTheory = nodeTypes.some(t => t.includes('game_theory'));
-    const hasScenario = nodeTypes.some(t => t.includes('scenario'));
-    const hasMonteCarlo = nodeTypes.some(t => t.includes('monte_carlo'));
-
-    const contextualSuggestions: string[] = [];
-
-    // Add suggestions based on what's missing
-    if (!hasSegmentation) {
-      contextualSuggestions.push("Break down results by demographics");
-    }
-    if (!hasGameTheory && !lastContent.includes('competitor')) {
-      contextualSuggestions.push("Add competitor response modeling");
-    }
-    if (!hasScenario && hasMonteCarlo) {
-      contextualSuggestions.push("Compare multiple scenarios");
-    }
-
-    // Add precision suggestion if small sample
-    contextualSuggestions.push("Increase sample to 5,000 agents");
-
-    // Add explanation option
-    contextualSuggestions.push("How does this simulation work?");
-
-    // Return top 4 most relevant
-    return contextualSuggestions.slice(0, 4);
-  }, [messages, hasWorkflowOnCanvas, canvasStore.nodes]);
+  // Follow-up suggestions when workflow exists
+  const followUpSuggestions = [
+    "Add demographic segmentation",
+    "Use 5000 agents for more precision",
+    "Focus on millennials only",
+    "How does this simulation work?",
+  ];
 
   return (
     <div className={cn("flex flex-col bg-[hsl(0,0%,7%)]", className)}>
