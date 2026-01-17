@@ -1,7 +1,14 @@
 // Agent Response Parser
 // Parses LLM responses into structured data for aggregation
+// Includes SSR calibration for accurate confidence scoring
 
 import { QuestionType } from "./prompt-compiler";
+import {
+  calibrateConfidence,
+  getConfidenceInterval,
+  QuestionType as CalibrationQuestionType,
+} from "../calibration/ssr-static";
+import type { AgentProfile } from "../population/sampler";
 
 export type ConfidenceLevel = "high" | "medium" | "low";
 
@@ -304,11 +311,34 @@ export interface AggregatedResult {
     medium: number;
     low: number;
   };
+  // SSR-calibrated confidence interval (95% CI)
+  confidenceInterval?: {
+    lower: number;
+    upper: number;
+    margin: number;
+  };
+  // Average calibrated confidence score
+  calibratedConfidence?: number;
+}
+
+// Map our QuestionType to calibration QuestionType
+function toCalibrationQuestionType(qt: QuestionType): CalibrationQuestionType {
+  return qt as CalibrationQuestionType;
 }
 
 export function aggregateResponses(
   responses: ParsedResponse[],
-  weights?: number[]
+  weights?: number[],
+  options?: {
+    // Optional: provide agents for demographic-aware calibration
+    agents?: AgentProfile[];
+    // Optional: question type for calibration
+    questionType?: QuestionType;
+    // Optional: topic for domain-specific calibration
+    topic?: string;
+    // Whether to apply SSR calibration (default: true)
+    useCalibration?: boolean;
+  }
 ): AggregatedResult {
   const successful = responses.filter((r) => r.success);
   const n = successful.length;
@@ -326,11 +356,29 @@ export function aggregateResponses(
     };
   }
 
-  // Calculate weights
+  // Calculate weights with optional calibration
   const agentWeights = weights || successful.map(() => 1 / n);
-  const confidenceWeights = successful.map(
-    (r, i) => r.confidenceScore * (agentWeights[i] || 1 / n)
-  );
+  const useCalibration = options?.useCalibration ?? true;
+  const questionType = options?.questionType
+    ? toCalibrationQuestionType(options.questionType)
+    : "binary";
+
+  const confidenceWeights = successful.map((r, i) => {
+    let confScore = r.confidenceScore;
+
+    // Apply SSR calibration if enabled
+    if (useCalibration) {
+      const agent = options?.agents?.[i];
+      confScore = calibrateConfidence(
+        r.confidence,
+        questionType,
+        agent,
+        options?.topic
+      );
+    }
+
+    return confScore * (agentWeights[i] || 1 / n);
+  });
   const totalWeight = confidenceWeights.reduce((a, b) => a + b, 0);
 
   // Calculate mean and weighted mean
@@ -384,6 +432,22 @@ export function aggregateResponses(
     low: successful.filter((r) => r.confidence === "low").length / n,
   };
 
+  // Calculate calibrated confidence and interval if calibration is enabled
+  let calibratedConfidence: number | undefined;
+  let confidenceInterval: { lower: number; upper: number; margin: number } | undefined;
+
+  if (useCalibration) {
+    // Average calibrated confidence across all responses
+    const calibratedScores = successful.map((r, i) => {
+      const agent = options?.agents?.[i];
+      return calibrateConfidence(r.confidence, questionType, agent, options?.topic);
+    });
+    calibratedConfidence = calibratedScores.reduce((a, b) => a + b, 0) / n;
+
+    // Calculate 95% confidence interval
+    confidenceInterval = getConfidenceInterval(calibratedConfidence, n);
+  }
+
   return {
     mean,
     std,
@@ -393,5 +457,7 @@ export function aggregateResponses(
     sampleSize: responses.length,
     successfulParses: n,
     confidenceBreakdown,
+    calibratedConfidence,
+    confidenceInterval,
   };
 }

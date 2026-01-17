@@ -19,11 +19,38 @@ function simpleIconUrl(slug: string, color: string = "b3b3b3"): string {
 // Connector to Simple Icons slug mapping
 // See: https://github.com/simple-icons/simple-icons/blob/develop/slugs.md
 const CONNECTOR_ICON_MAP: Record<string, { slug: string; fallback?: React.ComponentType<LogoProps> }> = {
-  // CRM
+  // CRM (includes Merge integrations)
   salesforce: { slug: "salesforce" },
   hubspot: { slug: "hubspot" },
   pipedrive: { slug: "pipedrive" },
   "zoho-crm": { slug: "zoho" },
+  close: { slug: "close" },
+  copper: { slug: "copper" },
+  freshsales: { slug: "freshworks" },
+  "dynamics-365": { slug: "dynamics365" },
+
+  // HRIS (Merge integrations)
+  workday: { slug: "workday" },
+  bamboohr: { slug: "bamboo" },
+  gusto: { slug: "gusto" },
+  rippling: { slug: "rippling" },
+  adp: { slug: "adp" },
+  personio: { slug: "personio" },
+  paylocity: { slug: "paylocity" },
+
+  // Accounting (Merge integrations)
+  quickbooks: { slug: "quickbooks" },
+  xero: { slug: "xero" },
+  netsuite: { slug: "oracle" },
+  sage: { slug: "sage" },
+
+  // Ticketing (Merge integrations)
+  freshdesk: { slug: "freshdesk" },
+
+  // ATS (Merge integrations)
+  greenhouse: { slug: "greenhouse" },
+  lever: { slug: "lever" },
+  workable: { slug: "workable" },
 
   // Databases
   postgres: { slug: "postgresql" },

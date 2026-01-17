@@ -153,7 +153,7 @@ export function ConnectorBrowser({ onSelect, selectedId }: ConnectorBrowserProps
         {/* Footer note */}
         {!search && !activeCategory && (
           <p className="text-center text-[11px] py-4" style={{ color: colors.textQuaternary }}>
-            400+ connectors via Airbyte
+            For CRM/HRIS, use the Connect CRM/HRIS option
           </p>
         )}
       </div>

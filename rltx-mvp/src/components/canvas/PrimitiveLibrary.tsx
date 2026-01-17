@@ -32,6 +32,9 @@ import {
   // Playbook icons
   Layers,
   Database,
+  ClipboardList,
+  Activity,
+  Flag,
   type LucideIcon,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -43,7 +46,6 @@ import {
   type PrimitiveCategory,
 } from "@/lib/primitives/spec-primitives";
 import {
-  playbookPatterns,
   getAllPlaybookPatterns,
   type PlaybookPattern,
 } from "@/lib/primitives/presets";
@@ -82,7 +84,7 @@ const iconMap: Record<string, LucideIcon> = {
   Layers,
 };
 
-// Category icons (Linear style)
+// Category icons (Linear style - monochrome)
 const categoryIcons: Record<PrimitiveCategory, LucideIcon> = {
   agent: User,
   population: Users,
@@ -92,13 +94,14 @@ const categoryIcons: Record<PrimitiveCategory, LucideIcon> = {
   analyze: TrendingUp,
 };
 
-// Playbook type icons (Linear monochrome)
+// Playbook icons - Linear style: monochrome, 1.5px stroke, outlined
+// Icons chosen for functional meaning, not decoration (per design.md)
 const playbookTypeIcons: Record<string, LucideIcon> = {
-  consumer_survey: Users,
-  change_impact: TrendingUp,
+  consumer_survey: ClipboardList,
+  change_impact: Scale,
   competitive_response: Target,
-  wargame: GitCompare,
-  dynamics: Network,
+  wargame: Flag,
+  dynamics: Activity,
   counterfactual: GitBranch,
 };
 
@@ -228,17 +231,26 @@ export function PrimitiveLibrary({ className }: PrimitiveLibraryProps) {
 
   return (
     <div
-      className={cn("flex flex-col h-full bg-[hsl(0,0%,7%)]", className)}
+      className={cn("flex flex-col h-full", className)}
+      style={{ backgroundColor: designTokens.bgBase }}
     >
-      {/* Search */}
+      {/* Search - Linear style */}
       <div className="p-2.5 flex-shrink-0">
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[hsl(0,0%,40%)]" />
+          <Search
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5"
+            style={{ color: designTokens.iconSecondary }}
+          />
           <Input
-            placeholder="Search..."
+            placeholder="Search primitives..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-8 pl-8 text-xs bg-[hsl(0,0%,10%)] border-[hsl(0,0%,14%)] text-[hsl(0,0%,98%)] placeholder:text-[hsl(0,0%,35%)] focus-visible:ring-0 focus-visible:border-[hsl(0,0%,25%)] rounded-md"
+            className="h-8 pl-8 text-[13px] rounded-md focus-visible:ring-0"
+            style={{
+              backgroundColor: designTokens.bgSurface,
+              borderColor: designTokens.borderSubtle,
+              color: designTokens.textPrimary,
+            }}
           />
         </div>
       </div>
@@ -303,14 +315,20 @@ export function PrimitiveLibrary({ className }: PrimitiveLibraryProps) {
           </div>
         </div>
 
-        {/* Drag Handle */}
+        {/* Drag Handle - Linear style */}
         <div
           className="flex-shrink-0 h-[1px] relative group cursor-row-resize"
           onMouseDown={handleDragStart}
         >
-          <div className="absolute inset-x-0 top-0 h-[1px] bg-[hsl(0,0%,12%)]" />
+          <div
+            className="absolute inset-x-0 top-0 h-[1px]"
+            style={{ backgroundColor: designTokens.borderSubtle }}
+          />
           <div className="absolute inset-x-0 -top-1 h-[9px] flex items-center justify-center">
-            <div className="w-8 h-[3px] rounded-full bg-[hsl(0,0%,20%)] opacity-0 group-hover:opacity-100 transition-opacity duration-100" />
+            <div
+              className="w-8 h-[3px] rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-100"
+              style={{ backgroundColor: designTokens.borderDefault }}
+            />
           </div>
         </div>
 
@@ -416,9 +434,15 @@ export function PrimitiveLibrary({ className }: PrimitiveLibraryProps) {
         </div>
       </div>
 
-      {/* Footer hint */}
-      <div className="px-3 py-2 flex-shrink-0">
-        <p className="text-[10px] text-[hsl(0,0%,30%)] text-center">
+      {/* Footer hint - Linear style */}
+      <div
+        className="px-3 py-2.5 flex-shrink-0 border-t"
+        style={{ borderColor: designTokens.borderSubtle }}
+      >
+        <p
+          className="text-[11px] text-center"
+          style={{ color: designTokens.textQuaternary }}
+        >
           Drag to canvas
         </p>
       </div>
@@ -426,7 +450,8 @@ export function PrimitiveLibrary({ className }: PrimitiveLibraryProps) {
   );
 }
 
-// Playbook item component (Linear design)
+// Playbook item component - Linear design: monochrome, minimal chrome
+// Per design.md: "No colorful backgrounds for containers"
 function PlaybookItem({
   playbook,
   onDragStart,
@@ -447,16 +472,11 @@ function PlaybookItem({
         "hover:bg-[hsl(0,0%,12%)] transition-colors duration-100"
       )}
     >
-      {/* Icon container - Linear style */}
-      <div
-        className="w-6 h-6 rounded flex items-center justify-center flex-shrink-0"
-        style={{ backgroundColor: designTokens.bgActive }}
-      >
-        <PlaybookIcon
-          className="w-3.5 h-3.5"
-          style={{ color: designTokens.iconSecondary }}
-        />
-      </div>
+      {/* Icon - monochrome per design.md */}
+      <PlaybookIcon
+        className="w-4 h-4 flex-shrink-0"
+        style={{ color: designTokens.iconSecondary }}
+      />
 
       {/* Text content */}
       <div className="flex-1 min-w-0">
@@ -466,24 +486,15 @@ function PlaybookItem({
         >
           {playbook.name}
         </span>
-        <span
-          className="text-[11px] truncate block"
-          style={{ color: designTokens.textTertiary }}
-        >
-          {playbook.description.slice(0, 50)}
-        </span>
       </div>
 
-      {/* Node count badge */}
-      <div
-        className="px-1.5 py-0.5 rounded text-[10px] tabular-nums"
-        style={{
-          backgroundColor: designTokens.bgActive,
-          color: designTokens.textQuaternary
-        }}
+      {/* Node count - subtle badge */}
+      <span
+        className="text-[10px] tabular-nums flex-shrink-0"
+        style={{ color: designTokens.textQuaternary }}
       >
         {nodeCount}
-      </div>
+      </span>
     </div>
   );
 }

@@ -221,7 +221,7 @@ export function AddSourceWizard({ isOpen, onClose, onComplete }: AddSourceWizard
             )}
             <div>
               <h2 className="text-[13px] font-medium" style={{ color: colors.textPrimary }}>
-                {step === "done" ? "Population Ready" : "Connect Data Source"}
+                {step === "done" ? "Population Ready" : "Connect Database"}
               </h2>
               <p className="text-[11px]" style={{ color: colors.textTertiary }}>
                 {step === "connector" && "Choose a connector"}
@@ -235,20 +235,6 @@ export function AddSourceWizard({ isOpen, onClose, onComplete }: AddSourceWizard
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Grayscale progress dots */}
-            {step !== "done" && (
-              <div className="flex items-center gap-1">
-                {STEPS.map((s, i) => (
-                  <div
-                    key={s}
-                    className="w-1.5 h-1.5 rounded-full"
-                    style={{
-                      background: i <= stepIndex ? colors.textTertiary : colors.iconTertiary,
-                    }}
-                  />
-                ))}
-              </div>
-            )}
             <button
               onClick={onClose}
               className="p-1 rounded transition-colors"

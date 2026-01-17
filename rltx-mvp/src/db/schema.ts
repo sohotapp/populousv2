@@ -456,3 +456,345 @@ export interface ConfigField {
   options?: { value: string; label: string }[];
   helpText?: string;
 }
+
+// ============ TIERED AGENT SYSTEM ============
+
+/**
+ * VIP Agents - High-fidelity named individuals from nyne.ai
+ * Tier 1: Full LLM reasoning with Claude Opus
+ * ~2,000 agents with rich behavioral profiles
+ */
+export const vipAgents = pgTable("vip_agents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  nyneId: text("nyne_id").unique(), // External ID from nyne.ai
+  name: text("name").notNull(),
+
+  // Classification (new fields for strategic collection)
+  vertical: text("vertical").notNull(), // 'enterprise', 'political', 'defense'
+  tier: text("tier").notNull().default("A"), // 'A', 'B', 'C'
+  domain: text("domain").notNull(), // 'tech_ceo', 'ai_lab', 'congress', 'cabinet', etc.
+  role: text("role").notNull(), // 'Senator', 'CEO', 'General', etc.
+  affiliation: text("affiliation"), // Party, company, organization
+  priorityRank: integer("priority_rank"), // Collection priority within vertical
+
+  // Identity
+  biography: text("biography"),
+  communicationStyle: text("communication_style"),
+  sampleContent: jsonb("sample_content").$type<string[]>(), // Representative quotes/posts
+
+  // Psychographic profile (inferred from nyne.ai)
+  bigFive: jsonb("big_five").$type<BigFiveTraits>(),
+  moralFoundations: jsonb("moral_foundations").$type<MoralFoundations>(),
+  psychographics: jsonb("psychographics").$type<VIPPsychographics>(),
+
+  // Topic interests and positions
+  topicInterests: jsonb("topic_interests").$type<TopicInterest[]>(),
+  knownPositions: jsonb("known_positions").$type<KnownPosition[]>(),
+
+  // Network relationships
+  network: jsonb("network").$type<AgentNetwork>(),
+
+  // Raw nyne.ai data (preserved for reprocessing)
+  nyneRawInterests: jsonb("nyne_raw_interests").$type<Record<string, unknown>>(),
+  nyneRawNewsfeed: jsonb("nyne_raw_newsfeed").$type<Record<string, unknown>>(),
+  nyneRawEnrichment: jsonb("nyne_raw_enrichment").$type<Record<string, unknown>>(),
+  nyneRawSocial: jsonb("nyne_raw_social").$type<Record<string, unknown>>(),
+
+  // Collection tracking
+  collectionStatus: text("collection_status").default("pending"), // 'pending', 'partial', 'complete', 'error'
+  creditsUsed: integer("credits_used").default(0),
+
+  // For semantic search via Pinecone
+  embeddingId: text("embedding_id"), // Pinecone vector ID
+
+  // Metadata
+  lastSyncedAt: timestamp("last_synced_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+/**
+ * Validation Events - Historical events for backtesting simulation accuracy
+ */
+export const validationEvents = pgTable("validation_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  eventType: text("event_type").notNull(), // 'election', 'vote', 'market', 'announcement', 'policy'
+  eventDate: timestamp("event_date").notNull(),
+  description: text("description"),
+  vertical: text("vertical").notNull(), // 'enterprise', 'political', 'defense'
+
+  // The scenario that was presented
+  scenario: jsonb("scenario").$type<Record<string, unknown>>(),
+
+  // What actually happened
+  actualOutcome: jsonb("actual_outcome").$type<Record<string, unknown>>(),
+
+  // What the simulation predicted (filled in after backtest)
+  predictedOutcome: jsonb("predicted_outcome").$type<Record<string, unknown>>(),
+  simulationId: uuid("simulation_id").references(() => simulations.id),
+
+  // Accuracy metrics
+  accuracyScore: real("accuracy_score"), // Overall accuracy 0-1
+  calibrationScore: real("calibration_score"), // How well-calibrated distributions were
+  brierScore: real("brier_score"), // Brier score for probabilistic predictions
+
+  // Source
+  groundTruthSource: text("ground_truth_source"), // URL or reference
+  notes: text("notes"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+/**
+ * Collection Log - Track nyne.ai API calls and credit usage
+ */
+export const collectionLog = pgTable("collection_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  vipId: uuid("vip_id").references(() => vipAgents.id),
+  vipName: text("vip_name").notNull(),
+
+  // API details
+  apiEndpoint: text("api_endpoint").notNull(), // 'interests', 'newsfeed', 'enrichment', 'social'
+  creditsUsed: integer("credits_used").notNull(),
+
+  // Result
+  status: text("status").notNull(), // 'success', 'error', 'rate_limited', 'not_found'
+  errorMessage: text("error_message"),
+  responseHash: text("response_hash"), // For deduplication
+  responseSize: integer("response_size"), // Bytes
+
+  // Timing
+  requestDurationMs: integer("request_duration_ms"),
+  collectedAt: timestamp("collected_at").defaultNow().notNull(),
+});
+
+/**
+ * Agent Archetypes - Statistical clusters for efficient simulation
+ * Tier 2: Lighter LLM calls with GPT-4o-mini
+ * ~10,000 archetypes representing demographic/psychographic clusters
+ */
+export const agentArchetypes = pgTable("agent_archetypes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  demographicHash: text("demographic_hash").unique().notNull(), // Fast lookup key
+
+  // Demographics (from US Census)
+  demographics: jsonb("demographics").notNull().$type<ArchetypeDemographics>(),
+
+  // Psychographic traits
+  traits: jsonb("traits").notNull().$type<ArchetypeTraits>(),
+
+  // Population weighting for representative sampling
+  populationWeight: real("population_weight").notNull(),
+
+  // Pre-computed response distributions for common questions
+  // Maps question type -> response distribution
+  responseDistributions: jsonb("response_distributions").$type<Record<string, ResponseDistribution>>(),
+
+  // Number of statistical agents using this archetype
+  agentCount: integer("agent_count").default(0),
+
+  // Human-readable description
+  description: text("description"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+/**
+ * Statistical Agents - Lightweight agents for large-scale simulation
+ * Tier 3: No LLM calls, uses lookup from archetype distributions
+ * ~1,000,000 agents for population-level simulations
+ */
+export const statisticalAgents = pgTable("statistical_agents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  archetypeId: uuid("archetype_id").references(() => agentArchetypes.id).notNull(),
+
+  // Individual variation from archetype (for diversity)
+  traitVariation: jsonb("trait_variation").$type<Partial<ArchetypeTraits>>(),
+
+  // Sampling weight
+  weight: real("weight").default(1.0),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ============ TIERED AGENT TYPES ============
+
+export interface VIPPsychographics {
+  riskTolerance: number; // 0-1
+  decisionStyle: "analytical" | "intuitive" | "consensus";
+  influenceability: number; // 0-1
+  publicPrivateGap: number; // How different public vs private stance (0-1)
+  values?: string[];
+  communicationStyle?: string;
+}
+
+// Big Five personality traits (OCEAN model)
+export interface BigFiveTraits {
+  openness: number; // 0-1: Curiosity, creativity, preference for variety
+  conscientiousness: number; // 0-1: Organization, dependability, self-discipline
+  extraversion: number; // 0-1: Sociability, assertiveness, positive emotions
+  agreeableness: number; // 0-1: Cooperation, trust, altruism
+  neuroticism: number; // 0-1: Anxiety, moodiness, emotional instability
+}
+
+// Moral Foundations Theory (Jonathan Haidt)
+export interface MoralFoundations {
+  care: number; // 0-1: Concern for others' wellbeing
+  fairness: number; // 0-1: Justice, rights, autonomy
+  loyalty: number; // 0-1: Patriotism, self-sacrifice for group
+  authority: number; // 0-1: Respect for tradition, hierarchy
+  sanctity: number; // 0-1: Purity, disgust, sacredness
+  liberty: number; // 0-1: Freedom from oppression
+}
+
+// Topic interest with engagement weight
+export interface TopicInterest {
+  topic: string;
+  weight: number; // 0-1 interest level
+  category: string; // 'technology', 'politics', 'business', etc.
+  source: string; // Where this was observed
+}
+
+export interface KnownPosition {
+  topic: string;
+  stance: number; // -1 (strongly against) to +1 (strongly for)
+  confidence: number; // 0-1
+  source: string; // Where this was observed
+  date?: string;
+}
+
+export interface AgentNetwork {
+  influences: string[]; // IDs of agents who influence this one
+  influencedBy: string[]; // IDs of agents this one influences
+  affiliations?: string[]; // Groups/organizations
+}
+
+export interface ArchetypeDemographics {
+  age: "18-24" | "25-34" | "35-44" | "45-54" | "55-64" | "65+";
+  gender: "male" | "female" | "other";
+  income: "under_25k" | "25k_50k" | "50k_75k" | "75k_100k" | "100k_150k" | "150k_plus";
+  education: "no_hs" | "hs" | "some_college" | "bachelors" | "graduate";
+  location: "urban" | "suburban" | "rural";
+  region: "northeast" | "midwest" | "south" | "west";
+  employment?: "employed" | "unemployed" | "retired" | "student";
+}
+
+export interface ArchetypeTraits {
+  riskTolerance: number; // 0-1
+  priceSensitivity: number; // 0-1
+  brandLoyalty: number; // 0-1
+  techAdoption: number; // 0-1
+  politicalLeaning?: number; // -1 (very liberal) to +1 (very conservative)
+}
+
+export interface ResponseDistribution {
+  type: "categorical" | "likert" | "binary";
+  options: string[];
+  probabilities: number[]; // Same length as options, sums to 1
+  calibrationSource?: string; // Where this was calibrated from
+}
+
+// ============ COMPANY AGENTS ============
+
+/**
+ * Company Agents - Organizations as first-class simulation actors
+ * Enables M&A simulations, enterprise sales modeling, market response
+ * 500 companies: Fortune 100 + Defense + Strategic Startups
+ */
+export const companyAgents = pgTable("company_agents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  nyneId: text("nyne_id").unique(),
+
+  // Identity
+  name: text("name").notNull(),
+  companyDomain: text("company_domain"), // company domain for lookup
+  ticker: text("ticker"), // Stock ticker if public
+
+  // Classification
+  vertical: text("vertical").notNull(), // 'enterprise', 'defense', 'startup'
+  tier: text("tier").notNull().default("A"), // 'A', 'B', 'C'
+  sector: text("sector").notNull(), // 'tech', 'finance', 'healthcare', 'defense', 'retail'
+  subsector: text("subsector"), // 'cloud', 'ai', 'semiconductors'
+  priorityRank: integer("priority_rank"),
+
+  // Firmographics
+  size: text("size"), // 'startup', 'smb', 'mid_market', 'enterprise', 'mega'
+  employeeCount: integer("employee_count"),
+  annualRevenue: decimal("annual_revenue", { precision: 15, scale: 2 }),
+  founded: integer("founded"), // Year
+  hqLocation: text("hq_location"),
+
+  // Organizational Profile
+  companyDescription: text("company_description"),
+  techStack: jsonb("tech_stack").$type<string[]>(), // From Feature Checker
+  painPoints: jsonb("pain_points").$type<CompanyNeed[]>(), // From Needs API
+  fundingHistory: jsonb("funding_history").$type<FundingRound[]>(),
+
+  // Behavioral Profile (inferred)
+  riskTolerance: real("risk_tolerance"), // 0-1
+  innovationScore: real("innovation_score"), // 0-1
+  regulatoryExposure: real("regulatory_exposure"), // 0-1
+  aiAdoptionStage: text("ai_adoption_stage"), // 'exploring', 'piloting', 'scaling', 'mature'
+
+  // Network
+  keyExecutives: jsonb("key_executives").$type<string[]>(), // VIP IDs
+  competitors: jsonb("competitors").$type<string[]>(), // Company IDs
+  partners: jsonb("partners").$type<string[]>(), // Company IDs
+  investors: jsonb("investors").$type<string[]>(), // VIP/Company IDs
+
+  // Raw nyne.ai data
+  nyneRawEnrichment: jsonb("nyne_raw_enrichment").$type<Record<string, unknown>>(),
+  nyneRawNeeds: jsonb("nyne_raw_needs").$type<Record<string, unknown>>(),
+  nyneRawFeatures: jsonb("nyne_raw_features").$type<Record<string, unknown>>(),
+  nyneRawFunding: jsonb("nyne_raw_funding").$type<Record<string, unknown>>(),
+
+  // Collection tracking
+  collectionStatus: text("collection_status").default("pending"),
+  creditsUsed: integer("credits_used").default(0),
+
+  // Metadata
+  lastSyncedAt: timestamp("last_synced_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+/**
+ * VIP-Company Relations - Links between executives and organizations
+ * Enables network influence modeling and organizational behavior
+ */
+export const vipCompanyRelations = pgTable("vip_company_relations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  vipId: uuid("vip_id").references(() => vipAgents.id).notNull(),
+  companyId: uuid("company_id").references(() => companyAgents.id).notNull(),
+
+  // Relationship type
+  relationType: text("relation_type").notNull(), // 'executive', 'board', 'investor', 'advisor', 'founder'
+  role: text("role"), // 'CEO', 'Board Member', 'GP'
+
+  // Relationship strength
+  influence: real("influence"), // 0-1: How much does VIP influence company decisions
+  tenure: text("tenure"), // 'current', 'former', 'incoming'
+  startDate: text("start_date"),
+  endDate: text("end_date"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ============ COMPANY TYPES ============
+
+export interface CompanyNeed {
+  painPoint: string;
+  severity: number; // 0-1
+  source: string; // 'sec_filing', 'news', 'inferred'
+  category: string; // 'operational', 'regulatory', 'competitive', 'technology'
+}
+
+export interface FundingRound {
+  round: string; // 'seed', 'series_a', 'series_b', etc.
+  amount: number;
+  date: string;
+  investors: string[];
+  valuation?: number;
+}

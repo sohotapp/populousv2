@@ -1,7 +1,8 @@
 // Model Router
-// Selects appropriate model (Haiku/Sonnet/Opus) based on task complexity
+// Selects appropriate model (Haiku/Sonnet/Opus) based on task complexity and agent tier
 
 import { CompiledPrompt } from "./prompt-compiler";
+import { type Agent, type AgentTier } from "./agent-store";
 
 export type ModelTier = "haiku" | "sonnet" | "opus";
 
@@ -330,5 +331,168 @@ export function estimateSimulationCost(params: {
       sonnet: { count: sonnetCount, cost: sonnetCost },
       opus: { count: opusCount, cost: opusCost },
     },
+  };
+}
+
+// ============================================================
+// AGENT-TIER BASED ROUTING
+// ============================================================
+
+/**
+ * Route model selection based on agent tier
+ *
+ * Tier mapping:
+ * - VIP (Tier 1): Always use Opus for highest quality
+ * - Archetype (Tier 2): Use Sonnet/Haiku based on complexity
+ * - Statistical (Tier 3): No LLM call - use distribution lookup
+ */
+export interface AgentRoutingResult {
+  requiresLLM: boolean;
+  tier?: ModelTier;
+  config?: ModelConfig;
+  reason: string;
+}
+
+export function routeByAgentTier(
+  agent: Agent,
+  options?: {
+    isStrategic?: boolean;
+    forceUpgrade?: boolean;
+    complexity?: number;
+  }
+): AgentRoutingResult {
+  // Statistical agents don't use LLM
+  if (agent.tier === "statistical") {
+    return {
+      requiresLLM: false,
+      reason: "Statistical agent - using pre-computed distribution lookup",
+    };
+  }
+
+  // VIP agents always use Opus for highest fidelity
+  if (agent.tier === "vip") {
+    return {
+      requiresLLM: true,
+      tier: "opus",
+      config: MODEL_CONFIGS.opus,
+      reason: "VIP agent - using Opus for highest quality reasoning",
+    };
+  }
+
+  // Archetype agents use Sonnet by default, Haiku for simple tasks
+  if (agent.tier === "archetype") {
+    // Strategic reasoning always uses Sonnet minimum
+    if (options?.isStrategic) {
+      return {
+        requiresLLM: true,
+        tier: "sonnet",
+        config: MODEL_CONFIGS.sonnet,
+        reason: "Archetype with strategic reasoning - using Sonnet",
+      };
+    }
+
+    // Simple binary questions can use Haiku
+    const complexity = options?.complexity ?? 0.5;
+    if (complexity < 0.3 && !options?.forceUpgrade) {
+      return {
+        requiresLLM: true,
+        tier: "haiku",
+        config: MODEL_CONFIGS.haiku,
+        reason: "Archetype with simple question - using Haiku for efficiency",
+      };
+    }
+
+    // Default to Sonnet for balanced quality/cost
+    return {
+      requiresLLM: true,
+      tier: "sonnet",
+      config: MODEL_CONFIGS.sonnet,
+      reason: "Archetype agent - using Sonnet for balanced quality",
+    };
+  }
+
+  // Fallback to Sonnet
+  return {
+    requiresLLM: true,
+    tier: "sonnet",
+    config: MODEL_CONFIGS.sonnet,
+    reason: "Unknown agent tier - defaulting to Sonnet",
+  };
+}
+
+/**
+ * Batch route agents by tier
+ * Returns agents grouped by their LLM tier for efficient parallel execution
+ */
+export function groupAgentsByTier(agents: Agent[]): {
+  opus: Agent[];
+  sonnet: Agent[];
+  haiku: Agent[];
+  statistical: Agent[];
+} {
+  const groups = {
+    opus: [] as Agent[],
+    sonnet: [] as Agent[],
+    haiku: [] as Agent[],
+    statistical: [] as Agent[],
+  };
+
+  for (const agent of agents) {
+    const routing = routeByAgentTier(agent);
+    if (!routing.requiresLLM) {
+      groups.statistical.push(agent);
+    } else if (routing.tier === "opus") {
+      groups.opus.push(agent);
+    } else if (routing.tier === "haiku") {
+      groups.haiku.push(agent);
+    } else {
+      groups.sonnet.push(agent);
+    }
+  }
+
+  return groups;
+}
+
+/**
+ * Estimate cost for agent-tier-aware simulation
+ */
+export function estimateAgentTierCost(agents: Agent[]): {
+  totalCost: number;
+  breakdown: {
+    vip: { count: number; cost: number };
+    archetype: { count: number; cost: number };
+    statistical: { count: number; cost: number };
+  };
+  estimatedLatencyMs: number;
+} {
+  const groups = groupAgentsByTier(agents);
+  const tokens = { input: 500, output: 150 };
+
+  const opusCost = groups.opus.length * calculateCost(MODEL_CONFIGS.opus, tokens);
+  const sonnetCost = groups.sonnet.length * calculateCost(MODEL_CONFIGS.sonnet, tokens);
+  const haikuCost = groups.haiku.length * calculateCost(MODEL_CONFIGS.haiku, tokens);
+  const statisticalCost = groups.statistical.length * 0.0001; // ~$0.0001 per statistical lookup
+
+  // Parallel latency calculation
+  const opusTime =
+    Math.ceil(groups.opus.length / MODEL_CONFIGS.opus.maxConcurrency) *
+    MODEL_CONFIGS.opus.avgResponseTimeMs;
+  const sonnetTime =
+    Math.ceil(groups.sonnet.length / MODEL_CONFIGS.sonnet.maxConcurrency) *
+    MODEL_CONFIGS.sonnet.avgResponseTimeMs;
+  const haikuTime =
+    Math.ceil(groups.haiku.length / MODEL_CONFIGS.haiku.maxConcurrency) *
+    MODEL_CONFIGS.haiku.avgResponseTimeMs;
+  // Statistical lookups are instant
+  const statisticalTime = groups.statistical.length * 0.1; // ~0.1ms per lookup
+
+  return {
+    totalCost: opusCost + sonnetCost + haikuCost + statisticalCost,
+    breakdown: {
+      vip: { count: groups.opus.length, cost: opusCost },
+      archetype: { count: groups.sonnet.length + groups.haiku.length, cost: sonnetCost + haikuCost },
+      statistical: { count: groups.statistical.length, cost: statisticalCost },
+    },
+    estimatedLatencyMs: Math.max(opusTime, sonnetTime, haikuTime, statisticalTime),
   };
 }

@@ -35,6 +35,21 @@ import {
   Zap,
   AlertTriangle,
   Activity,
+  CheckCircle,
+  XCircle,
+  RefreshCw,
+  Lightbulb,
+  Key,
+  Eye,
+  EyeOff,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Keyboard,
+  Boxes,
+  PanelLeftClose,
+  PanelLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,6 +57,20 @@ import { cn } from "@/lib/utils";
 import { RLTXIcon } from "@/components/ui/RLTXIcon";
 import { NewWorkflowModal } from "@/components/workflow/NewWorkflowModal";
 import { DataPanel } from "@/components/data/DataPanel";
+import { SimulationView } from "@/components/simulation/SimulationView";
+import {
+  useInboxStore,
+  groupNotificationsByDate,
+  formatNotificationTime,
+  type Notification,
+} from "@/stores/inbox";
+import {
+  useSettingsStore,
+  MODEL_OPTIONS,
+  AGENT_COUNT_OPTIONS,
+  AUTO_ARCHIVE_OPTIONS,
+  KEYBOARD_SHORTCUTS,
+} from "@/stores/settings";
 
 // ============ DESIGN TOKENS FROM DESIGN.MD ============
 const colors = {
@@ -87,7 +116,7 @@ interface WorkflowItem {
   archived?: boolean;
 }
 
-type ViewFilter = "all" | "starred" | "inbox" | "analytics" | "archive" | "data";
+type ViewFilter = "all" | "starred" | "inbox" | "analytics" | "archive" | "data" | "settings" | "simulation";
 
 export default function HomePage() {
   const router = useRouter();
@@ -111,10 +140,18 @@ export default function HomePage() {
   const [commandQuery, setCommandQuery] = useState("");
   const commandInputRef = useRef<HTMLInputElement>(null);
 
-  // Load starred and archived IDs from localStorage
+  // Sidebar collapse state - Linear style
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Inbox store
+  const { notifications, unreadCount, markAsRead, markAllAsRead, deleteNotification } = useInboxStore();
+  const inboxUnreadCount = unreadCount();
+
+  // Load starred, archived IDs, and sidebar state from localStorage
   useEffect(() => {
     const savedStarred = localStorage.getItem("rltx-starred-workflows");
     const savedArchived = localStorage.getItem("rltx-archived-workflows");
+    const savedSidebarCollapsed = localStorage.getItem("rltx-sidebar-collapsed");
     if (savedStarred) {
       try {
         setStarredIds(new Set(JSON.parse(savedStarred)));
@@ -125,7 +162,19 @@ export default function HomePage() {
         setArchivedIds(new Set(JSON.parse(savedArchived)));
       } catch {}
     }
+    if (savedSidebarCollapsed) {
+      setSidebarCollapsed(savedSidebarCollapsed === "true");
+    }
   }, []);
+
+  // Persist sidebar state
+  const toggleSidebar = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("rltx-sidebar-collapsed", String(next));
+      return next;
+    });
+  };
 
   // Close context menu on click outside
   useEffect(() => {
@@ -193,11 +242,16 @@ export default function HomePage() {
         return;
       }
 
-      // Don't handle navigation when in input or modal
+      // Don't handle navigation when in input, textarea, or modal
+      const activeTag = document.activeElement?.tagName;
+      const isEditable = document.activeElement instanceof HTMLElement &&
+        document.activeElement.isContentEditable;
       if (
         showCreate ||
         showCommandPalette ||
-        document.activeElement?.tagName === "INPUT"
+        activeTag === "INPUT" ||
+        activeTag === "TEXTAREA" ||
+        isEditable
       ) {
         return;
       }
@@ -310,9 +364,8 @@ export default function HomePage() {
   const createWorkflow = async (config: {
     name: string;
     question: string;
-    decisionType: string;
-    analysisDepth: string;
-    playbook?: string;
+    pattern: string;
+    analysisDepth: "quick" | "standard" | "simulation";
   }) => {
     if (!config.name.trim() || !config.question.trim()) return;
 
@@ -324,9 +377,8 @@ export default function HomePage() {
         body: JSON.stringify({
           name: config.name,
           question: config.question,
-          decisionType: config.decisionType,
+          pattern: config.pattern,
           analysisDepth: config.analysisDepth,
-          playbook: config.playbook,
         }),
       });
 
@@ -368,6 +420,8 @@ export default function HomePage() {
     analytics: "Analytics",
     archive: "Archive",
     data: "Data Library",
+    settings: "Settings",
+    simulation: "Multiagent Simulation",
   };
 
   // Command palette items
@@ -377,6 +431,7 @@ export default function HomePage() {
       { id: "home", label: "Go to Home", shortcut: "G H", action: () => setActiveView("all") },
       { id: "starred", label: "Go to Starred", shortcut: "G S", action: () => setActiveView("starred") },
       { id: "analytics", label: "Go to Analytics", shortcut: "G A", action: () => setActiveView("analytics") },
+      { id: "simulation", label: "Multiagent Simulation", shortcut: "G M", action: () => setActiveView("simulation") },
       ...workflows.slice(0, 5).map((w) => ({
         id: w.id,
         label: w.name,
@@ -395,33 +450,81 @@ export default function HomePage() {
 
   return (
     <div className="h-screen flex" style={{ background: colors.bgBase }}>
-      {/* Sidebar */}
+      {/* Sidebar - Linear-style collapsible */}
       <aside
-        className="w-56 flex-shrink-0 flex flex-col"
-        style={{ borderRight: `1px solid ${colors.borderSubtle}` }}
+        className="flex-shrink-0 flex flex-col transition-all duration-200 ease-out"
+        style={{
+          width: sidebarCollapsed ? "52px" : "224px",
+          borderRight: `1px solid ${colors.borderSubtle}`
+        }}
       >
-        {/* Logo */}
+        {/* Logo + Toggle */}
         <div
-          className="h-14 flex items-center px-4"
-          style={{ borderBottom: `1px solid ${colors.borderSubtle}` }}
+          className={cn(
+            "h-14 flex items-center",
+            sidebarCollapsed ? "justify-center" : "justify-between"
+          )}
+          style={{
+            borderBottom: `1px solid ${colors.borderSubtle}`,
+            padding: sidebarCollapsed ? "0" : "0 16px",
+          }}
         >
-          <div className="flex items-center gap-2">
-            <span style={{ color: colors.textPrimary }}><RLTXIcon className="w-6 h-6" /></span>
-            <div className="flex items-baseline gap-1">
-              <span
-                className="font-semibold text-[13px] tracking-tight"
-                style={{ color: colors.textPrimary }}
+          {sidebarCollapsed ? (
+            /* Collapsed: Logo only, clickable to expand */
+            <button
+              onClick={toggleSidebar}
+              className="w-full h-full flex items-center justify-center transition-colors"
+              style={{ color: colors.textPrimary }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = colors.bgSurface;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+              }}
+              title="Expand sidebar"
+            >
+              <RLTXIcon className="w-6 h-6" />
+            </button>
+          ) : (
+            /* Expanded: Logo + text + toggle */
+            <>
+              <div className="flex items-center gap-2">
+                <span style={{ color: colors.textPrimary }}>
+                  <RLTXIcon className="w-6 h-6" />
+                </span>
+                <div className="flex items-baseline gap-1">
+                  <span
+                    className="font-semibold text-[13px] tracking-tight"
+                    style={{ color: colors.textPrimary }}
+                  >
+                    rltx
+                  </span>
+                  <span
+                    className="font-normal text-[13px] tracking-wide"
+                    style={{ color: colors.textSecondary }}
+                  >
+                    populous
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={toggleSidebar}
+                className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded transition-colors"
+                style={{ color: colors.iconSecondary }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = colors.bgHover;
+                  e.currentTarget.style.color = colors.iconPrimary;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                  e.currentTarget.style.color = colors.iconSecondary;
+                }}
+                title="Collapse sidebar"
               >
-                rltx
-              </span>
-              <span
-                className="font-[family-name:var(--font-space-grotesk)] font-medium text-[13px] tracking-wide"
-                style={{ color: colors.textSecondary }}
-              >
-                populous
-              </span>
-            </div>
-          </div>
+                <PanelLeftClose className="w-4 h-4" />
+              </button>
+            </>
+          )}
         </div>
 
         {/* Navigation - DESIGN.md sidebar styling */}
@@ -431,12 +534,22 @@ export default function HomePage() {
             label="Home"
             active={activeView === "all"}
             onClick={() => setActiveView("all")}
+            collapsed={sidebarCollapsed}
+          />
+          <SidebarItem
+            icon={Boxes}
+            label="Multiagent Simulation"
+            active={activeView === "simulation"}
+            onClick={() => setActiveView("simulation")}
+            collapsed={sidebarCollapsed}
           />
           <SidebarItem
             icon={Inbox}
             label="Inbox"
             active={activeView === "inbox"}
+            count={inboxUnreadCount > 0 ? inboxUnreadCount : undefined}
             onClick={() => setActiveView("inbox")}
+            collapsed={sidebarCollapsed}
           />
           <SidebarItem
             icon={Star}
@@ -444,18 +557,21 @@ export default function HomePage() {
             active={activeView === "starred"}
             count={starredCount > 0 ? starredCount : undefined}
             onClick={() => setActiveView("starred")}
+            collapsed={sidebarCollapsed}
           />
           <SidebarItem
             icon={Database}
             label="Data"
             active={activeView === "data"}
             onClick={() => setActiveView("data")}
+            collapsed={sidebarCollapsed}
           />
           <SidebarItem
             icon={BarChart2}
             label="Analytics"
             active={activeView === "analytics"}
             onClick={() => setActiveView("analytics")}
+            collapsed={sidebarCollapsed}
           />
           <SidebarItem
             icon={Archive}
@@ -463,18 +579,21 @@ export default function HomePage() {
             active={activeView === "archive"}
             count={archivedCount > 0 ? archivedCount : undefined}
             onClick={() => setActiveView("archive")}
+            collapsed={sidebarCollapsed}
           />
 
-          <div className="pt-4 pb-2">
-            <span
-              className="px-2 text-[11px] font-medium uppercase"
-              style={{ color: colors.textQuaternary, letterSpacing: "0.02em" }}
-            >
-              Workflows
-            </span>
-          </div>
+          {!sidebarCollapsed && (
+            <div className="pt-4 pb-2">
+              <span
+                className="px-2 text-[11px] font-medium uppercase"
+                style={{ color: colors.textQuaternary, letterSpacing: "0.02em" }}
+              >
+                Workflows
+              </span>
+            </div>
+          )}
 
-          {workflows
+          {!sidebarCollapsed && workflows
             .filter((w) => !archivedIds.has(w.id))
             .slice(0, 5)
             .map((w) => (
@@ -483,6 +602,7 @@ export default function HomePage() {
                 icon={FileText}
                 label={w.name}
                 onClick={() => router.push(`/workflow/${w.id}`)}
+                collapsed={sidebarCollapsed}
               />
             ))}
         </nav>
@@ -491,9 +611,12 @@ export default function HomePage() {
         <div className="p-2 space-y-0.5" style={{ borderTop: `1px solid ${colors.borderSubtle}` }}>
           <button
             onClick={() => setShowCommandPalette(true)}
-            className="w-full flex items-center gap-2 rounded transition-colors"
+            className={cn(
+              "w-full flex items-center rounded transition-colors",
+              sidebarCollapsed ? "justify-center" : "gap-2"
+            )}
             style={{
-              padding: "6px 8px",
+              padding: sidebarCollapsed ? "6px" : "6px 8px",
               color: colors.textTertiary,
             }}
             onMouseEnter={(e) => {
@@ -504,76 +627,89 @@ export default function HomePage() {
               e.currentTarget.style.background = "transparent";
               e.currentTarget.style.color = colors.textTertiary;
             }}
+            title={sidebarCollapsed ? "Search (⌘K)" : undefined}
           >
-            <Search className="w-4 h-4" style={{ color: colors.iconSecondary }} />
-            <span className="flex-1 text-left text-[13px]">Search</span>
-            <kbd
-              className="text-[11px] px-1.5 py-0.5 rounded"
-              style={{ background: colors.bgHover, color: colors.textQuaternary, fontFamily: "monospace" }}
-            >
-              ⌘K
-            </kbd>
+            <Search className="w-4 h-4 flex-shrink-0" style={{ color: colors.iconSecondary }} />
+            {!sidebarCollapsed && (
+              <>
+                <span className="flex-1 text-left text-[13px]">Search</span>
+                <kbd
+                  className="text-[11px] px-1.5 py-0.5 rounded"
+                  style={{ background: colors.bgHover, color: colors.textQuaternary, fontFamily: "monospace" }}
+                >
+                  ⌘K
+                </kbd>
+              </>
+            )}
           </button>
-          <SidebarItem icon={Settings} label="Settings" onClick={() => {}} />
+          <SidebarItem
+            icon={Settings}
+            label="Settings"
+            active={activeView === "settings"}
+            onClick={() => setActiveView("settings")}
+            collapsed={sidebarCollapsed}
+          />
         </div>
       </aside>
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
-        <header
-          className="h-12 flex items-center justify-between px-6 flex-shrink-0"
-          style={{ borderBottom: `1px solid ${colors.borderSubtle}` }}
-        >
-          <div className="flex items-baseline gap-2">
-            <h1 className="text-[13px] font-medium" style={{ color: colors.textPrimary }}>
-              {viewTitles[activeView]}
-            </h1>
-            {showList && filteredWorkflows.length > 0 && (
-              <span className="text-[11px]" style={{ color: colors.textTertiary }}>
-                {filteredWorkflows.length}
-              </span>
-            )}
-          </div>
+        {/* Header - hidden for data view since DataPanel has its own */}
+        {activeView !== "data" && (
+          <header
+            className="h-12 flex items-center justify-between px-6 flex-shrink-0"
+            style={{ borderBottom: `1px solid ${colors.borderSubtle}` }}
+          >
+            <div className="flex items-baseline gap-2">
+              <h1 className="text-[13px] font-medium" style={{ color: colors.textPrimary }}>
+                {viewTitles[activeView]}
+              </h1>
+              {showList && filteredWorkflows.length > 0 && (
+                <span className="text-[11px]" style={{ color: colors.textTertiary }}>
+                  {filteredWorkflows.length}
+                </span>
+              )}
+            </div>
 
-          <div className="flex items-center gap-3">
-            {showList && (
-              <>
-                <div className="relative">
-                  <Search
-                    className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5"
-                    style={{ color: colors.iconTertiary }}
-                  />
-                  <input
-                    placeholder="Search..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-48 h-7 pl-8 pr-3 text-[13px] rounded outline-none transition-colors"
-                    style={{
-                      background: "transparent",
-                      border: `1px solid ${colors.borderDefault}`,
-                      color: colors.textPrimary,
-                    }}
-                    onFocus={(e) => (e.target.style.borderColor = colors.borderHover)}
-                    onBlur={(e) => (e.target.style.borderColor = colors.borderDefault)}
-                  />
-                </div>
-                {/* Only show New button in "all" view, not starred/archive */}
-                {activeView === "all" && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowCreate(true)}
-                    className="h-7 gap-1.5 text-[13px]"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    New
-                  </Button>
-                )}
-              </>
-            )}
-          </div>
-        </header>
+            <div className="flex items-center gap-3">
+              {showList && (
+                <>
+                  <div className="relative">
+                    <Search
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5"
+                      style={{ color: colors.iconTertiary }}
+                    />
+                    <input
+                      placeholder="Search..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-48 h-7 pl-8 pr-3 text-[13px] rounded outline-none transition-colors"
+                      style={{
+                        background: "transparent",
+                        border: `1px solid ${colors.borderDefault}`,
+                        color: colors.textPrimary,
+                      }}
+                      onFocus={(e) => (e.target.style.borderColor = colors.borderHover)}
+                      onBlur={(e) => (e.target.style.borderColor = colors.borderDefault)}
+                    />
+                  </div>
+                  {/* Only show New button in "all" view, not starred/archive */}
+                  {activeView === "all" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowCreate(true)}
+                      className="h-7 gap-1.5 text-[13px]"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      New
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
+          </header>
+        )}
 
         {/* Content */}
         <div className="flex-1 overflow-auto">
@@ -604,8 +740,17 @@ export default function HomePage() {
             </div>
           ) : activeView === "analytics" ? (
             <AnalyticsView workflows={workflows} archivedIds={archivedIds} />
+          ) : activeView === "simulation" ? (
+            <SimulationView />
           ) : activeView === "inbox" ? (
-            <InboxView />
+            <InboxView
+              notifications={notifications}
+              onMarkRead={markAsRead}
+              onMarkAllRead={markAllAsRead}
+              onDelete={deleteNotification}
+            />
+          ) : activeView === "settings" ? (
+            <SettingsView />
           ) : loading ? (
             <div className="flex items-center justify-center h-64">
               <Loader2 className="w-5 h-5 animate-spin" style={{ color: colors.textTertiary }} />
@@ -656,19 +801,21 @@ export default function HomePage() {
   );
 }
 
-// ============ SIDEBAR ITEM (DESIGN.md lines 483-502) ============
+// ============ SIDEBAR ITEM (DESIGN.md lines 483-502) - Linear-style with collapse support ============
 function SidebarItem({
   icon: Icon,
   label,
   active,
   count,
   onClick,
+  collapsed = false,
 }: {
   icon: React.ElementType;
   label: string;
   active?: boolean;
   count?: number;
   onClick: () => void;
+  collapsed?: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
 
@@ -677,23 +824,37 @@ function SidebarItem({
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="w-full flex items-center rounded transition-all"
+      className={cn(
+        "w-full flex items-center rounded transition-all relative",
+        collapsed ? "justify-center" : ""
+      )}
       style={{
-        padding: "6px 8px",
-        gap: "8px",
+        padding: collapsed ? "6px" : "6px 8px",
+        gap: collapsed ? "0" : "8px",
         background: active ? colors.bgHover : hovered ? colors.bgSurface : "transparent",
         color: active ? colors.textPrimary : hovered ? colors.textSecondary : colors.textTertiary,
       }}
+      title={collapsed ? label : undefined}
     >
       <Icon
         className="w-4 h-4 flex-shrink-0"
         style={{ color: active ? colors.iconPrimary : colors.iconSecondary }}
       />
-      <span className="truncate flex-1 text-left text-[13px]">{label}</span>
-      {count !== undefined && (
-        <span className="text-[11px] tabular-nums" style={{ color: colors.textQuaternary }}>
-          {count}
-        </span>
+      {!collapsed && (
+        <>
+          <span className="truncate flex-1 text-left text-[13px]">{label}</span>
+          {count !== undefined && (
+            <span className="text-[11px] tabular-nums" style={{ color: colors.textQuaternary }}>
+              {count}
+            </span>
+          )}
+        </>
+      )}
+      {collapsed && count !== undefined && count > 0 && (
+        <span
+          className="absolute top-0 right-0 w-2 h-2 rounded-full"
+          style={{ background: colors.statusInfo }}
+        />
       )}
     </button>
   );
@@ -865,18 +1026,32 @@ function WorkflowRow({
 }) {
   const [hovered, setHovered] = useState(false);
 
+  const handleClick = (e: React.MouseEvent) => {
+    // Prevent double-firing and ensure click registers
+    e.preventDefault();
+    onClick();
+  };
+
   return (
     <div
-      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onClick={handleClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
       onContextMenu={onContextMenu}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="grid grid-cols-[1fr,80px,80px,28px] gap-4 px-4 py-2 cursor-pointer transition-colors group"
+      className="grid grid-cols-[1fr,80px,80px,28px] gap-4 px-4 py-2 cursor-pointer transition-colors group select-none"
       style={{
         background: isSelected ? colors.bgHover : hovered ? colors.bgSurface : "transparent",
       }}
     >
-      <div className="flex items-center gap-2.5 min-w-0">
+      <div className="flex items-center gap-2.5 min-w-0 pointer-events-none">
         {isStarred && (
           <Star
             className="w-3 h-3 flex-shrink-0"
@@ -894,12 +1069,12 @@ function WorkflowRow({
         </div>
       </div>
 
-      <div className="flex items-center">
+      <div className="flex items-center pointer-events-none">
         <StatusBadge status={workflow.status} />
       </div>
 
       <div
-        className="text-[11px] flex items-center tabular-nums"
+        className="text-[11px] flex items-center tabular-nums pointer-events-none"
         style={{ color: colors.textTertiary }}
       >
         {formatDate(workflow.updatedAt)}
@@ -909,9 +1084,10 @@ function WorkflowRow({
         <button
           onClick={(e) => {
             e.stopPropagation();
+            e.preventDefault();
             onContextMenu(e);
           }}
-          className="w-5 h-5 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity"
+          className="w-5 h-5 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-auto"
           style={{ color: colors.iconSecondary }}
           onMouseEnter={(e) => (e.currentTarget.style.background = colors.bgHover)}
           onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
@@ -1071,6 +1247,11 @@ function EmptyState({
       title: "No data yet",
       desc: "Upload CSV, JSON, or PDF files to use in workflows",
     },
+    settings: {
+      icon: Settings,
+      title: "Settings",
+      desc: "Configure your account and preferences",
+    },
   };
 
   const { icon: Icon, title, desc } = config[activeView];
@@ -1109,24 +1290,542 @@ function EmptyState({
   );
 }
 
-// ============ INBOX VIEW ============
-function InboxView() {
+// ============ INBOX VIEW - DESIGN.MD VERBATIM ============
+function InboxView({
+  notifications,
+  onMarkRead,
+  onMarkAllRead,
+  onDelete,
+}: {
+  notifications: Notification[];
+  onMarkRead: (id: string) => void;
+  onMarkAllRead: () => void;
+  onDelete: (id: string) => void;
+}) {
+  const groupedNotifications = groupNotificationsByDate(notifications);
+  const hasUnread = notifications.some((n) => !n.read);
+
+  // Empty state
+  if (notifications.length === 0) {
+    return (
+      <div
+        className="flex flex-col items-center justify-center text-center"
+        style={{ padding: "48px 24px" }}
+      >
+        <Bell className="w-6 h-6" style={{ color: colors.iconEmpty, marginBottom: "16px" }} />
+        <h2 className="text-[13px] font-medium" style={{ color: colors.textTertiary }}>
+          No notifications
+        </h2>
+        <p className="text-[13px] max-w-xs" style={{ color: colors.textQuaternary, marginTop: "4px" }}>
+          Workflow updates and activity will appear here
+        </p>
+      </div>
+    );
+  }
+
+  const getNotificationIcon = (type: Notification["type"]) => {
+    switch (type) {
+      case "simulation_complete":
+        return <CheckCircle className="w-4 h-4" style={{ color: "hsl(142, 70%, 45%)" }} />;
+      case "simulation_failed":
+        return <XCircle className="w-4 h-4" style={{ color: "hsl(0, 70%, 55%)" }} />;
+      case "data_sync":
+        return <RefreshCw className="w-4 h-4" style={{ color: "hsl(210, 70%, 55%)" }} />;
+      case "insight":
+        return <Lightbulb className="w-4 h-4" style={{ color: "hsl(38, 90%, 50%)" }} />;
+      case "threshold_alert":
+        return <AlertTriangle className="w-4 h-4" style={{ color: "hsl(0, 70%, 55%)" }} />;
+      default:
+        return <Bell className="w-4 h-4" style={{ color: colors.iconSecondary }} />;
+    }
+  };
+
   return (
-    // design.md: padding 48px 24px, centered
-    <div
-      className="flex flex-col items-center justify-center text-center"
-      style={{ padding: "48px 24px" }}
-    >
-      {/* design.md: icon color hsl(0,0%,20%), margin-bottom 16px */}
-      <Bell className="w-6 h-6" style={{ color: colors.iconEmpty, marginBottom: "16px" }} />
-      {/* design.md: 13px, font-weight 500, hsl(0,0%,50%) */}
-      <h2 className="text-[13px] font-medium" style={{ color: colors.textTertiary }}>
-        No notifications
-      </h2>
-      {/* design.md: 13px, hsl(0,0%,35%), margin-top 4px */}
-      <p className="text-[13px] max-w-xs" style={{ color: colors.textQuaternary, marginTop: "4px" }}>
-        Workflow updates and activity will appear here
-      </p>
+    <div className="h-full overflow-auto">
+      {/* Header */}
+      <div
+        className="flex items-center justify-between px-4 py-3 sticky top-0"
+        style={{ background: colors.bgBase, borderBottom: `1px solid ${colors.borderSubtle}` }}
+      >
+        <h2 className="text-[13px] font-medium" style={{ color: colors.textPrimary }}>
+          Inbox
+        </h2>
+        {hasUnread && (
+          <button
+            onClick={onMarkAllRead}
+            className="text-[12px] px-2 py-1 rounded transition-colors"
+            style={{ color: colors.textTertiary }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = colors.bgHover;
+              e.currentTarget.style.color = colors.textSecondary;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.color = colors.textTertiary;
+            }}
+          >
+            Mark all read
+          </button>
+        )}
+      </div>
+
+      {/* Notification groups */}
+      <div className="py-1">
+        {groupedNotifications.map((group) => (
+          <div key={group.label}>
+            {/* Group label */}
+            <div
+              className="px-4 py-2 text-[11px] font-medium"
+              style={{ color: colors.textQuaternary }}
+            >
+              {group.label}
+            </div>
+
+            {/* Notifications */}
+            {group.notifications.map((notification) => (
+              <div
+                key={notification.id}
+                className="group flex items-start gap-3 px-4 py-2.5 cursor-pointer transition-colors"
+                style={{ background: notification.read ? "transparent" : colors.bgSurface }}
+                onClick={() => !notification.read && onMarkRead(notification.id)}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = colors.bgHover;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = notification.read ? "transparent" : colors.bgSurface;
+                }}
+              >
+                {/* Unread indicator */}
+                <div className="w-1.5 flex-shrink-0 pt-1.5">
+                  {!notification.read && (
+                    <div
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{ background: "hsl(210, 70%, 55%)" }}
+                    />
+                  )}
+                </div>
+
+                {/* Icon */}
+                <div className="flex-shrink-0 pt-0.5">
+                  {getNotificationIcon(notification.type)}
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span
+                      className="text-[13px] truncate"
+                      style={{ color: notification.read ? colors.textSecondary : colors.textPrimary }}
+                    >
+                      {notification.title}
+                    </span>
+                    <span className="text-[11px] flex-shrink-0" style={{ color: colors.textQuaternary }}>
+                      {formatNotificationTime(notification.timestamp)}
+                    </span>
+                  </div>
+                  {notification.description && (
+                    <p
+                      className="text-[12px] mt-0.5 line-clamp-2"
+                      style={{ color: colors.textTertiary }}
+                    >
+                      {notification.description}
+                    </p>
+                  )}
+                </div>
+
+                {/* Delete button - hover reveal */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(notification.id);
+                  }}
+                  className="flex-shrink-0 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{ color: colors.iconSecondary }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = colors.bgActive;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "transparent";
+                  }}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============ SETTINGS VIEW - DESIGN.MD VERBATIM ============
+function SettingsView() {
+  const settings = useSettingsStore();
+  const [showAnthropicKey, setShowAnthropicKey] = useState(false);
+  const [showMergeKey, setShowMergeKey] = useState(false);
+  const [showOpenaiKey, setShowOpenaiKey] = useState(false);
+
+  // Input component for settings - inline label style
+  const SettingInput = ({
+    label,
+    value,
+    onChange,
+    type = "text",
+    placeholder,
+    showToggle,
+    isVisible,
+    onToggleVisibility,
+  }: {
+    label: string;
+    value: string;
+    onChange: (value: string) => void;
+    type?: string;
+    placeholder?: string;
+    showToggle?: boolean;
+    isVisible?: boolean;
+    onToggleVisibility?: () => void;
+  }) => (
+    <div className="flex items-center justify-between py-2">
+      <label className="text-[13px]" style={{ color: colors.textSecondary }}>
+        {label}
+      </label>
+      <div className="flex items-center gap-2">
+        <input
+          type={showToggle && !isVisible ? "password" : type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="w-48 px-2 py-1 text-[13px] rounded outline-none transition-colors text-right"
+          style={{
+            background: colors.bgSurface,
+            border: `1px solid ${colors.borderDefault}`,
+            color: colors.textPrimary,
+          }}
+          onFocus={(e) => (e.target.style.borderColor = colors.borderHover)}
+          onBlur={(e) => (e.target.style.borderColor = colors.borderDefault)}
+        />
+        {showToggle && (
+          <button
+            onClick={onToggleVisibility}
+            className="p-1 rounded transition-colors"
+            style={{ color: colors.iconSecondary }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = colors.bgHover)}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+          >
+            {isVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  // Select component for settings
+  const SettingSelect = <T extends string | number>({
+    label,
+    value,
+    options,
+    onChange,
+  }: {
+    label: string;
+    value: T;
+    options: { value: T; label: string }[];
+    onChange: (value: T) => void;
+  }) => (
+    <div className="flex items-center justify-between py-2">
+      <label className="text-[13px]" style={{ color: colors.textSecondary }}>
+        {label}
+      </label>
+      <div className="relative">
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value as T)}
+          className="appearance-none w-36 px-2 py-1 pr-7 text-[13px] rounded outline-none cursor-pointer"
+          style={{
+            background: colors.bgSurface,
+            border: `1px solid ${colors.borderDefault}`,
+            color: colors.textPrimary,
+          }}
+        >
+          {options.map((opt) => (
+            <option key={String(opt.value)} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown
+          className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none"
+          style={{ color: colors.iconSecondary }}
+        />
+      </div>
+    </div>
+  );
+
+  // Toggle component for settings
+  const SettingToggle = ({
+    label,
+    checked,
+    onChange,
+  }: {
+    label: string;
+    checked: boolean;
+    onChange: (checked: boolean) => void;
+  }) => (
+    <div className="flex items-center justify-between py-2">
+      <label className="text-[13px]" style={{ color: colors.textSecondary }}>
+        {label}
+      </label>
+      <button
+        onClick={() => onChange(!checked)}
+        className="w-9 h-5 rounded-full transition-colors relative"
+        style={{
+          background: checked ? "hsl(210, 70%, 55%)" : colors.bgHover,
+        }}
+      >
+        <div
+          className="absolute top-0.5 w-4 h-4 rounded-full transition-transform"
+          style={{
+            background: colors.textPrimary,
+            transform: checked ? "translateX(18px)" : "translateX(2px)",
+          }}
+        />
+      </button>
+    </div>
+  );
+
+  return (
+    <div className="h-full overflow-auto">
+      {/* Header */}
+      <div
+        className="px-4 py-3 sticky top-0"
+        style={{ background: colors.bgBase, borderBottom: `1px solid ${colors.borderSubtle}` }}
+      >
+        <h2 className="text-[13px] font-medium" style={{ color: colors.textPrimary }}>
+          Settings
+        </h2>
+      </div>
+
+      {/* Settings sections */}
+      <div className="px-4 py-4 space-y-6 max-w-xl">
+        {/* Account */}
+        <section>
+          <h3
+            className="text-[11px] font-medium uppercase tracking-wide mb-2"
+            style={{ color: colors.textQuaternary }}
+          >
+            Account
+          </h3>
+          <div style={{ borderTop: `1px solid ${colors.borderSubtle}` }}>
+            <SettingInput
+              label="Name"
+              value={settings.name}
+              onChange={(v) => settings.updateSetting("name", v)}
+              placeholder="Your name"
+            />
+            <SettingInput
+              label="Email"
+              value={settings.email}
+              onChange={(v) => settings.updateSetting("email", v)}
+              placeholder="you@example.com"
+              type="email"
+            />
+          </div>
+        </section>
+
+        {/* API Keys */}
+        <section>
+          <h3
+            className="text-[11px] font-medium uppercase tracking-wide mb-2 flex items-center gap-2"
+            style={{ color: colors.textQuaternary }}
+          >
+            <Key className="w-3 h-3" />
+            API Keys
+          </h3>
+          <div style={{ borderTop: `1px solid ${colors.borderSubtle}` }}>
+            <SettingInput
+              label="Anthropic API Key"
+              value={settings.anthropicApiKey}
+              onChange={(v) => settings.updateSetting("anthropicApiKey", v)}
+              placeholder="sk-ant-..."
+              showToggle
+              isVisible={showAnthropicKey}
+              onToggleVisibility={() => setShowAnthropicKey(!showAnthropicKey)}
+            />
+            <SettingInput
+              label="Merge.dev API Key"
+              value={settings.mergeApiKey}
+              onChange={(v) => settings.updateSetting("mergeApiKey", v)}
+              placeholder="prod_..."
+              showToggle
+              isVisible={showMergeKey}
+              onToggleVisibility={() => setShowMergeKey(!showMergeKey)}
+            />
+            <SettingInput
+              label="OpenAI API Key"
+              value={settings.openaiApiKey}
+              onChange={(v) => settings.updateSetting("openaiApiKey", v)}
+              placeholder="sk-..."
+              showToggle
+              isVisible={showOpenaiKey}
+              onToggleVisibility={() => setShowOpenaiKey(!showOpenaiKey)}
+            />
+          </div>
+        </section>
+
+        {/* Defaults */}
+        <section>
+          <h3
+            className="text-[11px] font-medium uppercase tracking-wide mb-2"
+            style={{ color: colors.textQuaternary }}
+          >
+            Defaults
+          </h3>
+          <div style={{ borderTop: `1px solid ${colors.borderSubtle}` }}>
+            <SettingSelect
+              label="Default Model"
+              value={settings.defaultModel}
+              options={MODEL_OPTIONS}
+              onChange={(v) => settings.updateSetting("defaultModel", v)}
+            />
+            <SettingSelect
+              label="Default Agent Count"
+              value={settings.defaultAgentCount}
+              options={AGENT_COUNT_OPTIONS}
+              onChange={(v) => settings.updateSetting("defaultAgentCount", v)}
+            />
+            <SettingSelect
+              label="Auto-archive after"
+              value={settings.autoArchiveDays}
+              options={AUTO_ARCHIVE_OPTIONS}
+              onChange={(v) => settings.updateSetting("autoArchiveDays", v)}
+            />
+          </div>
+        </section>
+
+        {/* Notifications */}
+        <section>
+          <h3
+            className="text-[11px] font-medium uppercase tracking-wide mb-2"
+            style={{ color: colors.textQuaternary }}
+          >
+            Notifications
+          </h3>
+          <div style={{ borderTop: `1px solid ${colors.borderSubtle}` }}>
+            <SettingToggle
+              label="Simulation complete"
+              checked={settings.notifications.simulationComplete}
+              onChange={(v) => settings.updateNotificationPref("simulationComplete", v)}
+            />
+            <SettingToggle
+              label="Simulation failed"
+              checked={settings.notifications.simulationFailed}
+              onChange={(v) => settings.updateNotificationPref("simulationFailed", v)}
+            />
+            <SettingToggle
+              label="Data sync updates"
+              checked={settings.notifications.dataSyncUpdates}
+              onChange={(v) => settings.updateNotificationPref("dataSyncUpdates", v)}
+            />
+            <SettingToggle
+              label="Threshold alerts"
+              checked={settings.notifications.thresholdAlerts}
+              onChange={(v) => settings.updateNotificationPref("thresholdAlerts", v)}
+            />
+            <SettingToggle
+              label="Weekly digest"
+              checked={settings.notifications.weeklyDigest}
+              onChange={(v) => settings.updateNotificationPref("weeklyDigest", v)}
+            />
+          </div>
+        </section>
+
+        {/* Data */}
+        <section>
+          <h3
+            className="text-[11px] font-medium uppercase tracking-wide mb-2"
+            style={{ color: colors.textQuaternary }}
+          >
+            Data
+          </h3>
+          <div
+            className="flex items-center gap-3 pt-2"
+            style={{ borderTop: `1px solid ${colors.borderSubtle}` }}
+          >
+            <button
+              onClick={settings.clearAllData}
+              className="px-3 py-1.5 text-[13px] rounded transition-colors"
+              style={{
+                background: "transparent",
+                border: `1px solid ${colors.borderDefault}`,
+                color: colors.textSecondary,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = colors.bgHover;
+                e.currentTarget.style.borderColor = colors.borderHover;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.borderColor = colors.borderDefault;
+              }}
+            >
+              Clear cached data
+            </button>
+            <button
+              onClick={settings.exportData}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[13px] rounded transition-colors"
+              style={{
+                background: "transparent",
+                border: `1px solid ${colors.borderDefault}`,
+                color: colors.textSecondary,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = colors.bgHover;
+                e.currentTarget.style.borderColor = colors.borderHover;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.borderColor = colors.borderDefault;
+              }}
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export all data
+            </button>
+          </div>
+        </section>
+
+        {/* Keyboard Shortcuts */}
+        <section>
+          <h3
+            className="text-[11px] font-medium uppercase tracking-wide mb-2 flex items-center gap-2"
+            style={{ color: colors.textQuaternary }}
+          >
+            <Keyboard className="w-3 h-3" />
+            Keyboard Shortcuts
+          </h3>
+          <div style={{ borderTop: `1px solid ${colors.borderSubtle}` }}>
+            {KEYBOARD_SHORTCUTS.map((shortcut) => (
+              <div
+                key={shortcut.keys}
+                className="flex items-center justify-between py-2"
+              >
+                <span className="text-[13px]" style={{ color: colors.textSecondary }}>
+                  {shortcut.description}
+                </span>
+                <kbd
+                  className="px-2 py-0.5 text-[11px] rounded"
+                  style={{
+                    background: colors.bgHover,
+                    color: colors.textTertiary,
+                    fontFamily: "monospace",
+                  }}
+                >
+                  {shortcut.keys}
+                </kbd>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
     </div>
   );
 }

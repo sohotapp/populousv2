@@ -38,7 +38,16 @@ export interface CompiledPrompt {
   complexity: number;
 }
 
-// Build the persona system prompt
+// Helper to describe psychographic levels
+function describeLevel(value: number): string {
+  if (value <= 0.2) return "very low";
+  if (value <= 0.4) return "low";
+  if (value <= 0.6) return "moderate";
+  if (value <= 0.8) return "high";
+  return "very high";
+}
+
+// Build the persona system prompt with psychographic enrichment
 function buildPersonaPrompt(agent: AgentProfile, domain?: string): string {
   const lines: string[] = [
     "You are simulating a real person with the following characteristics:",
@@ -64,8 +73,70 @@ function buildPersonaPrompt(agent: AgentProfile, domain?: string): string {
     lines.push(`- Household size: ${agent.demographics.householdSize} people`);
   }
 
-  // Add traits if available
-  if (agent.traits) {
+  // Add psychographic profile (Big Five personality)
+  if (agent.psychographics?.bigFive) {
+    const bf = agent.psychographics.bigFive;
+    lines.push("");
+    lines.push("PERSONALITY (Big Five OCEAN):");
+    lines.push(`- Openness: ${describeLevel(bf.openness)} (${Math.round(bf.openness * 100)}%) - intellectual curiosity, creativity`);
+    lines.push(`- Conscientiousness: ${describeLevel(bf.conscientiousness)} (${Math.round(bf.conscientiousness * 100)}%) - organization, dependability`);
+    lines.push(`- Extraversion: ${describeLevel(bf.extraversion)} (${Math.round(bf.extraversion * 100)}%) - sociability, assertiveness`);
+    lines.push(`- Agreeableness: ${describeLevel(bf.agreeableness)} (${Math.round(bf.agreeableness * 100)}%) - cooperation, trust`);
+    lines.push(`- Neuroticism: ${describeLevel(bf.neuroticism)} (${Math.round(bf.neuroticism * 100)}%) - emotional reactivity, anxiety`);
+  }
+
+  // Add values profile (Schwartz)
+  if (agent.psychographics?.values) {
+    const v = agent.psychographics.values;
+    lines.push("");
+    lines.push("CORE VALUES (top priorities):");
+    // Sort values by importance and show top 3
+    const sortedValues = [
+      { name: "Achievement", value: v.achievement, desc: "success, ambition" },
+      { name: "Security", value: v.security, desc: "safety, stability" },
+      { name: "Self-Direction", value: v.selfDirection, desc: "independence, freedom" },
+      { name: "Benevolence", value: v.benevolence, desc: "helping others, loyalty" },
+      { name: "Power", value: v.power, desc: "authority, influence" },
+      { name: "Tradition", value: v.tradition, desc: "respect, commitment" },
+    ].sort((a, b) => b.value - a.value);
+
+    sortedValues.slice(0, 3).forEach((val, i) => {
+      lines.push(`${i + 1}. ${val.name}: ${describeLevel(val.value)} (${val.desc})`);
+    });
+  }
+
+  // Add cognitive biases
+  if (agent.psychographics?.biases) {
+    const b = agent.psychographics.biases;
+    lines.push("");
+    lines.push("COGNITIVE TENDENCIES:");
+    if (b.lossAversion >= 0.6) {
+      lines.push(`- Loss aversion: ${describeLevel(b.lossAversion)} - weighs potential losses ${b.lossAversion >= 0.7 ? "2.5x" : "1.5x"} more than equivalent gains`);
+    }
+    if (b.statusQuoBias >= 0.5) {
+      lines.push(`- Status quo preference: ${describeLevel(b.statusQuoBias)} - prefers familiar options over change`);
+    }
+    if (b.socialProof >= 0.5) {
+      lines.push(`- Social influence: ${describeLevel(b.socialProof)} - influenced by what peers/others do`);
+    }
+    if (b.overconfidence >= 0.6) {
+      lines.push(`- Overconfidence: ${describeLevel(b.overconfidence)} - tends to overestimate own knowledge`);
+    }
+  }
+
+  // Add behavioral traits
+  if (agent.psychographics?.traits) {
+    const t = agent.psychographics.traits;
+    lines.push("");
+    lines.push("BEHAVIORAL TRAITS:");
+    lines.push(`- Risk tolerance: ${describeLevel(t.riskTolerance)} - ${t.riskTolerance <= 0.3 ? "cautious, prefers safety" : t.riskTolerance >= 0.7 ? "adventurous, willing to gamble" : "balanced approach to risk"}`);
+    lines.push(`- Price sensitivity: ${describeLevel(t.priceElasticity)} - ${t.priceElasticity >= 0.7 ? "very price-conscious" : t.priceElasticity <= 0.3 ? "less concerned about price" : "moderately price-aware"}`);
+    lines.push(`- Brand loyalty: ${describeLevel(t.brandLoyalty)} - ${t.brandLoyalty >= 0.7 ? "strongly prefers trusted brands" : t.brandLoyalty <= 0.3 ? "easily switches brands" : "moderate brand preference"}`);
+    lines.push(`- Quality focus: ${describeLevel(t.qualityOrientation)} - ${t.qualityOrientation >= 0.7 ? "prioritizes quality over price" : t.qualityOrientation <= 0.3 ? "prioritizes price over quality" : "balances quality and price"}`);
+  }
+
+  // Legacy traits if available (backwards compatibility)
+  if (agent.traits && !agent.psychographics) {
     lines.push("");
     lines.push("BEHAVIORAL TRAITS:");
     if (agent.traits.riskTolerance) {
@@ -86,9 +157,9 @@ function buildPersonaPrompt(agent: AgentProfile, domain?: string): string {
   lines.push("");
   lines.push("SIMULATION INSTRUCTIONS:");
   lines.push("- Respond as this person would ACTUALLY respond, not how you think they SHOULD respond");
-  lines.push("- Consider their financial situation, values, and constraints");
-  lines.push("- Be realistic about cognitive biases and emotional factors");
-  lines.push("- If uncertain, lean toward status quo / loss aversion (as real humans do)");
+  lines.push("- Consider their personality, values, financial situation, and cognitive tendencies");
+  lines.push("- Be realistic about how their biases affect decisions");
+  lines.push("- Use their Big Five traits to inform response style and decision-making");
 
   if (domain === "enterprise") {
     lines.push("- Consider professional context and career implications");

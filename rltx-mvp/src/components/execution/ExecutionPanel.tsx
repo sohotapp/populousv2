@@ -1,264 +1,249 @@
 "use client";
 
-import { useEffect } from "react";
-import { useExecutionStore, NodeState } from "@/stores/execution";
+import { useMemo } from "react";
 import { useCanvasStore } from "@/stores/canvas";
-import { DistributionChart, ConfidenceDisplay } from "@/components/visualization/DistributionChart";
+import type { ExecutionProgress } from "@/hooks/useWorkflow";
 import {
   Play,
-  Pause,
   Square,
   Loader2,
   Check,
   X,
   Activity,
   RotateCcw,
+  Users,
+  Clock,
+  TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export function ExecutionPanel() {
-  const {
-    isConnected,
-    executionStatus,
-    executionPlan,
-    currentPhase,
-    nodeStates,
-    results,
-    error,
-    distributions,
-    connect,
-    disconnect,
-    pauseExecution,
-    resumeExecution,
-    cancelExecution,
-    resetExecution,
-    setNodeStateCallback,
-  } = useExecutionStore();
+interface ExecutionPanelProps {
+  progress: ExecutionProgress;
+  onCancel?: () => void;
+  onReset?: () => void;
+  onRun?: () => void;
+  isExecuting?: boolean;
+  className?: string;
+}
 
-  const { nodes, updateNodeState } = useCanvasStore();
+export function ExecutionPanel({
+  progress,
+  onCancel,
+  onReset,
+  onRun,
+  isExecuting = false,
+  className,
+}: ExecutionPanelProps) {
+  const nodes = useCanvasStore((s) => s.nodes);
 
-  // Connect on mount and set up node state sync
-  useEffect(() => {
-    connect();
+  // Calculate overall progress
+  const progressPercent = useMemo(() => {
+    if (progress.totalNodes === 0) return 0;
+    const nodeProgress = (progress.completedNodes / progress.totalNodes) * 100;
+    const currentProgress = progress.currentNodeProgress / progress.totalNodes;
+    return Math.min(100, nodeProgress + currentProgress);
+  }, [progress.completedNodes, progress.totalNodes, progress.currentNodeProgress]);
 
-    // Set up callback to sync node states to canvas
-    setNodeStateCallback((nodeId: string, state: NodeState) => {
-      updateNodeState(nodeId, state);
-    });
+  // Calculate elapsed time
+  const elapsedTime = useMemo(() => {
+    if (!progress.startedAt) return null;
+    const endTime = progress.completedAt || new Date();
+    const elapsed = endTime.getTime() - progress.startedAt.getTime();
+    return formatDuration(elapsed);
+  }, [progress.startedAt, progress.completedAt]);
 
-    return () => {
-      disconnect();
-    };
-  }, [connect, disconnect, setNodeStateCallback, updateNodeState]);
-
-  // Calculate progress
-  const completedNodes = Object.values(nodeStates).filter(
-    (s) => s.state === "completed"
-  ).length;
-  const totalNodes = executionPlan?.totalNodes || nodes.length;
-  const progressPercent = totalNodes > 0 ? (completedNodes / totalNodes) * 100 : 0;
+  // Get current node info
+  const currentNode = useMemo(() => {
+    if (!progress.currentNodeId) return null;
+    return nodes.find((n) => n.id === progress.currentNodeId);
+  }, [nodes, progress.currentNodeId]);
 
   return (
-    <div className="h-full flex flex-col bg-[hsl(0,0%,7%)]">
-      {/* Header - seamless, no border */}
-      {/* design.md: panel padding 12px (space-3) */}
+    <div className={cn("h-full flex flex-col bg-[hsl(0,0%,7%)]", className)}>
+      {/* Header */}
       <div className="flex items-center justify-between px-3 py-3 flex-shrink-0">
         <span className="text-[hsl(0,0%,65%)] text-[13px] font-medium">
           Execution
         </span>
         <div className="flex items-center gap-2">
-          {/* Connection indicator - subtle dot */}
-          <div className="flex items-center gap-1.5">
-            <div
-              className={cn(
-                "w-1.5 h-1.5 rounded-full",
-                isConnected ? "bg-[hsl(140,50%,45%)]" : "bg-[hsl(0,0%,30%)]"
-              )}
-            />
-            <span className="text-[10px] text-[hsl(0,0%,40%)]">
-              {isConnected ? "Connected" : "Offline"}
-            </span>
-          </div>
+          <StatusBadge status={progress.status} />
         </div>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-3 relative">
-        {/* Status indicator - inline, subtle */}
-        {executionStatus !== "idle" && (
-          <div className="pb-4">
-            <div className="flex items-center gap-2 mb-2">
-              <StatusIndicator status={executionStatus} />
-              <span className="text-[12px] text-[hsl(0,0%,60%)]">
-                {completedNodes}/{totalNodes} nodes
-              </span>
-            </div>
-
-            {/* Progress bar - subtle */}
-            <div className="h-1 bg-[hsl(0,0%,12%)] rounded-full overflow-hidden">
-              <div
-                className="h-full bg-[hsl(0,0%,50%)] transition-all duration-100"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-
-            {currentPhase && (
-              <p className="text-[10px] text-[hsl(0,0%,35%)] mt-1.5">
-                {currentPhase.phase}
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Controls - subtle buttons */}
-        {executionStatus === "running" && (
-          <div className="flex gap-2 pb-4">
-            <button
-              onClick={pauseExecution}
-              className="flex-1 h-7 text-[12px] text-[hsl(0,0%,55%)] hover:text-[hsl(0,0%,75%)] hover:bg-[hsl(0,0%,10%)] rounded flex items-center justify-center gap-1.5 transition-colors duration-100"
-            >
-              <Pause className="w-3 h-3" />
-              Pause
-            </button>
-            <button
-              onClick={cancelExecution}
-              className="flex-1 h-7 text-[12px] text-[hsl(0,0%,55%)] hover:text-[hsl(0,50%,60%)] hover:bg-[hsl(0,0%,10%)] rounded flex items-center justify-center gap-1.5 transition-colors duration-100"
-            >
-              <Square className="w-3 h-3" />
-              Cancel
-            </button>
-          </div>
-        )}
-
-        {executionStatus === "paused" && (
-          <div className="flex gap-2 pb-4">
-            <button
-              onClick={resumeExecution}
-              className="flex-1 h-7 text-[12px] text-[hsl(0,0%,55%)] hover:text-[hsl(0,0%,75%)] hover:bg-[hsl(0,0%,10%)] rounded flex items-center justify-center gap-1.5 transition-colors duration-100"
-            >
-              <Play className="w-3 h-3" />
-              Resume
-            </button>
-            <button
-              onClick={cancelExecution}
-              className="flex-1 h-7 text-[12px] text-[hsl(0,0%,55%)] hover:text-[hsl(0,50%,60%)] hover:bg-[hsl(0,0%,10%)] rounded flex items-center justify-center gap-1.5 transition-colors duration-100"
-            >
-              <Square className="w-3 h-3" />
-              Cancel
-            </button>
-          </div>
-        )}
-
-        {(executionStatus === "completed" || executionStatus === "failed") && (
-          <div className="pb-4">
-            <button
-              onClick={resetExecution}
-              className="w-full h-7 text-[12px] text-[hsl(0,0%,55%)] hover:text-[hsl(0,0%,75%)] hover:bg-[hsl(0,0%,10%)] rounded flex items-center justify-center gap-1.5 transition-colors duration-100"
-            >
-              <RotateCcw className="w-3 h-3" />
-              Reset
-            </button>
-          </div>
-        )}
-
-        {/* Error Display - subtle */}
-        {error && (
-          <div className="pb-4">
-            <div className="p-2.5 rounded bg-[hsl(0,40%,12%)]">
-              <p className="text-[11px] text-[hsl(0,50%,60%)] font-medium mb-1">
-                Execution failed
-              </p>
-              <p className="text-[11px] text-[hsl(0,40%,55%)] leading-relaxed">
-                {error}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Results Section */}
-        {results?.recommendation && (
-          <div className="pb-4">
-            <p className="text-[11px] text-[hsl(0,0%,40%)] uppercase tracking-wide mb-2">
-              Recommendation
-            </p>
-            <div className="p-3 rounded bg-[hsl(0,0%,10%)]">
-              <p className="text-[14px] font-medium text-[hsl(0,0%,85%)] mb-1">
-                {results.recommendation.action}
-              </p>
-              <p className="text-[12px] text-[hsl(0,0%,55%)] mb-3 leading-relaxed">
-                {results.recommendation.reasoning}
-              </p>
-              {results.recommendation.confidenceInterval ? (
-                <ConfidenceDisplay
-                  mean={results.recommendation.confidence}
-                  lower={results.recommendation.confidenceInterval[0]}
-                  upper={results.recommendation.confidenceInterval[1]}
-                  label="Confidence"
+        {/* Running State */}
+        {progress.status === "running" && (
+          <div className="space-y-4">
+            {/* Overall Progress */}
+            <div className="pb-2">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[12px] text-[hsl(0,0%,60%)]">
+                  {progress.completedNodes}/{progress.totalNodes} nodes
+                </span>
+                {elapsedTime && (
+                  <span className="text-[11px] text-[hsl(0,0%,45%)] tabular-nums flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {elapsedTime}
+                  </span>
+                )}
+              </div>
+              <div className="h-1.5 bg-[hsl(0,0%,12%)] rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-[hsl(210,60%,55%)] transition-all duration-200 ease-out"
+                  style={{ width: `${progressPercent}%` }}
                 />
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-[hsl(0,0%,40%)]">Confidence</span>
-                  <div className="flex-1 h-1 bg-[hsl(0,0%,15%)] rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-[hsl(0,0%,50%)]"
-                      style={{ width: `${results.recommendation.confidence * 100}%` }}
-                    />
-                  </div>
-                  <span className="text-[11px] text-[hsl(0,0%,60%)] tabular-nums">
-                    {(results.recommendation.confidence * 100).toFixed(0)}%
+              </div>
+            </div>
+
+            {/* Live Agent Count - Key feature for simulations */}
+            {progress.totalAgents && progress.agentCount !== undefined && (
+              <div className="p-3 rounded-md bg-[hsl(0,0%,10%)] border border-[hsl(0,0%,15%)]">
+                <div className="flex items-center gap-2 mb-2">
+                  <Users className="w-4 h-4 text-[hsl(210,60%,55%)]" />
+                  <span className="text-[12px] font-medium text-[hsl(0,0%,75%)]">
+                    Agent Simulation
                   </span>
                 </div>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-[24px] font-semibold text-[hsl(0,0%,90%)] tabular-nums">
+                    {progress.agentCount.toLocaleString()}
+                  </span>
+                  <span className="text-[14px] text-[hsl(0,0%,50%)]">
+                    / {progress.totalAgents.toLocaleString()}
+                  </span>
+                  <span className="text-[11px] text-[hsl(0,0%,40%)] ml-1">agents</span>
+                </div>
+                <div className="mt-2 h-1 bg-[hsl(0,0%,15%)] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-[hsl(142,50%,45%)] transition-all duration-100"
+                    style={{ width: `${(progress.agentCount / progress.totalAgents) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Current Node */}
+            {currentNode && (
+              <div className="p-2.5 rounded-md bg-[hsl(0,0%,10%)]">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Loader2 className="w-3 h-3 animate-spin text-[hsl(210,60%,55%)]" />
+                  <span className="text-[12px] font-medium text-[hsl(0,0%,80%)] truncate">
+                    {(currentNode.data as { label?: string })?.label || "Processing"}
+                  </span>
+                </div>
+                {progress.currentNodeMessage && (
+                  <p className="text-[11px] text-[hsl(0,0%,50%)] truncate pl-5">
+                    {progress.currentNodeMessage}
+                  </p>
+                )}
+                {progress.currentNodeProgress > 0 && (
+                  <div className="mt-2 pl-5">
+                    <div className="h-0.5 bg-[hsl(0,0%,18%)] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[hsl(210,50%,55%)] transition-all duration-100"
+                        style={{ width: `${progress.currentNodeProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Control Buttons */}
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={onCancel}
+                className="flex-1 h-8 text-[12px] text-[hsl(0,0%,55%)] hover:text-[hsl(0,50%,60%)] hover:bg-[hsl(0,0%,10%)] rounded-md flex items-center justify-center gap-1.5 transition-colors duration-100 border border-[hsl(0,0%,15%)]"
+              >
+                <Square className="w-3 h-3" />
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Completed State */}
+        {progress.status === "completed" && (
+          <div className="space-y-4">
+            {/* Success Banner */}
+            <div className="p-3 rounded-md bg-[hsl(142,30%,12%)] border border-[hsl(142,30%,20%)]">
+              <div className="flex items-center gap-2">
+                <Check className="w-4 h-4 text-[hsl(142,60%,50%)]" />
+                <span className="text-[13px] font-medium text-[hsl(142,50%,70%)]">
+                  Execution Complete
+                </span>
+              </div>
+              {elapsedTime && (
+                <p className="text-[11px] text-[hsl(142,30%,50%)] mt-1 pl-6">
+                  Completed in {elapsedTime}
+                </p>
               )}
             </div>
+
+            {/* Results Summary */}
+            {progress.results?.summary != null && typeof progress.results.summary === "object" && (
+              <ResultsSummary results={progress.results.summary as Record<string, unknown>} />
+            )}
+
+            {/* Reset Button */}
+            <button
+              onClick={onReset}
+              className="w-full h-8 text-[12px] text-[hsl(0,0%,55%)] hover:text-[hsl(0,0%,75%)] hover:bg-[hsl(0,0%,10%)] rounded-md flex items-center justify-center gap-1.5 transition-colors duration-100 border border-[hsl(0,0%,15%)]"
+            >
+              <RotateCcw className="w-3 h-3" />
+              Run Again
+            </button>
           </div>
         )}
 
-        {/* Distributions */}
-        {Object.entries(distributions).length > 0 && (
-          <div className="pb-4">
-            <p className="text-[11px] text-[hsl(0,0%,40%)] uppercase tracking-wide mb-2">
-              Distributions
-            </p>
-            <div className="space-y-2">
-              {Object.entries(distributions).map(([nodeId, dist]) => (
-                <DistributionChart
-                  key={nodeId}
-                  distribution={dist}
-                  title={getNodeLabel(nodeId, nodes)}
-                  showStats={true}
-                />
-              ))}
+        {/* Error State */}
+        {progress.status === "error" && (
+          <div className="space-y-4">
+            <div className="p-3 rounded-md bg-[hsl(0,30%,12%)] border border-[hsl(0,30%,20%)]">
+              <div className="flex items-center gap-2">
+                <X className="w-4 h-4 text-[hsl(0,60%,55%)]" />
+                <span className="text-[13px] font-medium text-[hsl(0,50%,65%)]">
+                  Execution Failed
+                </span>
+              </div>
+              {progress.error && (
+                <p className="text-[11px] text-[hsl(0,30%,55%)] mt-1.5 pl-6 leading-relaxed">
+                  {progress.error}
+                </p>
+              )}
             </div>
+
+            <button
+              onClick={onReset}
+              className="w-full h-8 text-[12px] text-[hsl(0,0%,55%)] hover:text-[hsl(0,0%,75%)] hover:bg-[hsl(0,0%,10%)] rounded-md flex items-center justify-center gap-1.5 transition-colors duration-100 border border-[hsl(0,0%,15%)]"
+            >
+              <RotateCcw className="w-3 h-3" />
+              Try Again
+            </button>
           </div>
         )}
 
-        {/* Node States */}
-        {Object.keys(nodeStates).length > 0 && (
-          <div className="pb-4">
-            <p className="text-[11px] text-[hsl(0,0%,40%)] uppercase tracking-wide mb-2">
-              Nodes
-            </p>
-            <div className="space-y-1">
-              {Object.entries(nodeStates).map(([nodeId, state]) => (
-                <NodeStatusRow
-                  key={nodeId}
-                  label={getNodeLabel(nodeId, nodes)}
-                  state={state}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Empty State */}
-        {executionStatus === "idle" && (
+        {/* Idle State */}
+        {progress.status === "idle" && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center" style={{ top: '-10%' }}>
+            <Activity className="w-8 h-8 text-[hsl(0,0%,20%)] mb-3" />
             <p className="text-[13px] text-[hsl(0,0%,45%)]">
               No execution running
             </p>
-            <p className="text-[11px] text-[hsl(0,0%,30%)] mt-1">
+            <p className="text-[11px] text-[hsl(0,0%,30%)] mt-1 mb-4">
               Run workflow to see results
             </p>
+            {onRun && nodes.length > 0 && (
+              <button
+                onClick={onRun}
+                disabled={isExecuting}
+                className="h-8 px-4 text-[12px] font-medium bg-[hsl(0,0%,90%)] text-[hsl(0,0%,7%)] hover:bg-[hsl(0,0%,100%)] rounded-md flex items-center gap-1.5 transition-colors duration-100 disabled:opacity-50"
+              >
+                <Play className="w-3 h-3" />
+                Run Simulation
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -266,110 +251,118 @@ export function ExecutionPanel() {
   );
 }
 
-function StatusIndicator({ status }: { status: string }) {
-  // design.md status colors: info hsl(210,70%,55%), success hsl(142,70%,45%), warning hsl(38,90%,50%), error hsl(0,70%,55%)
-  const config: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
+function StatusBadge({ status }: { status: string }) {
+  const config: Record<string, { color: string; bg: string; label: string }> = {
     idle: {
-      color: "text-[hsl(0,0%,45%)]",
-      icon: <Activity className="w-3 h-3" />,
-      label: "Idle",
+      color: "text-[hsl(0,0%,50%)]",
+      bg: "bg-[hsl(0,0%,12%)]",
+      label: "Ready",
     },
     running: {
-      color: "text-[hsl(210,70%,55%)]",
-      icon: <Loader2 className="w-3 h-3 animate-spin" />,
+      color: "text-[hsl(210,70%,60%)]",
+      bg: "bg-[hsl(210,50%,15%)]",
       label: "Running",
     },
-    paused: {
-      color: "text-[hsl(38,90%,50%)]",
-      icon: <Pause className="w-3 h-3" />,
-      label: "Paused",
-    },
     completed: {
-      color: "text-[hsl(142,70%,45%)]",
-      icon: <Check className="w-3 h-3" />,
-      label: "Completed",
+      color: "text-[hsl(142,60%,55%)]",
+      bg: "bg-[hsl(142,30%,15%)]",
+      label: "Complete",
     },
-    failed: {
-      color: "text-[hsl(0,70%,55%)]",
-      icon: <X className="w-3 h-3" />,
+    error: {
+      color: "text-[hsl(0,60%,55%)]",
+      bg: "bg-[hsl(0,30%,15%)]",
       label: "Failed",
     },
   };
 
-  const { color, icon, label } = config[status] || config.idle;
+  const { color, bg, label } = config[status] || config.idle;
 
   return (
-    <div className={cn("flex items-center gap-1.5 text-[12px]", color)}>
-      {icon}
+    <span className={cn("px-2 py-0.5 rounded text-[10px] font-medium", color, bg)}>
       {label}
-    </div>
+    </span>
   );
 }
 
-function NodeStatusRow({
-  label,
-  state,
-}: {
-  label: string;
-  state: {
-    state: string;
-    progress?: number;
-    progressMessage?: string;
-    error?: string;
-    timing?: { durationMs?: number };
-  };
-}) {
-  // design.md status colors: info hsl(210,70%,55%), success hsl(142,70%,45%), error hsl(0,70%,55%)
-  const stateConfig: Record<string, { color: string; dotColor: string }> = {
-    idle: { color: "text-[hsl(0,0%,50%)]", dotColor: "bg-[hsl(0,0%,35%)]" },
-    pending: { color: "text-[hsl(0,0%,50%)]", dotColor: "bg-[hsl(0,0%,35%)]" },
-    running: { color: "text-[hsl(210,70%,55%)]", dotColor: "bg-[hsl(210,70%,55%)]" },
-    completed: { color: "text-[hsl(142,70%,45%)]", dotColor: "bg-[hsl(142,70%,45%)]" },
-    failed: { color: "text-[hsl(0,70%,55%)]", dotColor: "bg-[hsl(0,70%,55%)]" },
-  };
-
-  const { color, dotColor } = stateConfig[state.state] || stateConfig.idle;
+function ResultsSummary({ results }: { results: Record<string, unknown> }) {
+  // results is already the summary object
+  const yesRate = typeof results.yesRate === "number" ? results.yesRate : null;
+  const confidenceInterval = results.confidenceInterval as { lower?: number; upper?: number } | undefined;
+  const topSegment = results.topSegment as string | undefined;
+  const keyDriver = results.keyDriver as string | undefined;
 
   return (
-    <div className="py-1.5 px-2 rounded hover:bg-[hsl(0,0%,10%)] transition-colors duration-100">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className={cn(
-            "w-1.5 h-1.5 rounded-full",
-            dotColor,
-            state.state === "running" && "animate-pulse"
-          )} />
-          <span className={cn("text-[12px] truncate max-w-[160px]", color)}>
-            {label}
-          </span>
-        </div>
-        {state.timing?.durationMs && (
-          <span className="text-[10px] text-[hsl(0,0%,40%)] tabular-nums">
-            {(state.timing.durationMs / 1000).toFixed(1)}s
-          </span>
-        )}
-      </div>
-      {state.state === "running" && state.progress !== undefined && (
-        <div className="mt-1.5 ml-3.5">
-          <div className="h-0.5 bg-[hsl(0,0%,15%)] rounded-full overflow-hidden">
-            <div
-              className="h-full bg-[hsl(210,60%,60%)] transition-all duration-100"
-              style={{ width: `${state.progress}%` }}
-            />
+    <div className="space-y-3">
+      <p className="text-[11px] text-[hsl(0,0%,40%)] uppercase tracking-wide">
+        Results Summary
+      </p>
+
+      {/* Primary Metric */}
+      {yesRate !== null && (
+        <div className="p-3 rounded-md bg-[hsl(0,0%,10%)]">
+          <div className="flex items-center gap-2 mb-1">
+            <TrendingUp className="w-4 h-4 text-[hsl(210,60%,55%)]" />
+            <span className="text-[11px] text-[hsl(0,0%,50%)]">Response Rate</span>
           </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-[28px] font-semibold text-[hsl(0,0%,95%)] tabular-nums">
+              {Math.round(yesRate * 100)}%
+            </span>
+            {confidenceInterval && (
+              <span className="text-[12px] text-[hsl(0,0%,45%)]">
+                ±{Math.round((confidenceInterval.upper! - confidenceInterval.lower!) / 2 * 100)}%
+              </span>
+            )}
+          </div>
+          {confidenceInterval && (
+            <div className="mt-2">
+              <div className="h-1.5 bg-[hsl(0,0%,15%)] rounded-full relative">
+                <div
+                  className="absolute h-full bg-[hsl(210,40%,45%)] rounded-full"
+                  style={{
+                    left: `${confidenceInterval.lower! * 100}%`,
+                    width: `${(confidenceInterval.upper! - confidenceInterval.lower!) * 100}%`,
+                  }}
+                />
+                <div
+                  className="absolute w-0.5 h-3 bg-[hsl(0,0%,80%)] rounded -top-[3px]"
+                  style={{ left: `${yesRate * 100}%` }}
+                />
+              </div>
+              <div className="flex justify-between mt-1 text-[9px] text-[hsl(0,0%,40%)] tabular-nums">
+                <span>{Math.round(confidenceInterval.lower! * 100)}%</span>
+                <span>{Math.round(confidenceInterval.upper! * 100)}%</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
-      {state.error && (
-        <p className="text-[10px] text-[hsl(0,50%,55%)] mt-1 ml-3.5 truncate">
-          {state.error}
-        </p>
+
+      {/* Key Insights */}
+      {(topSegment || keyDriver) && (
+        <div className="space-y-2">
+          {topSegment && (
+            <div className="p-2.5 rounded-md bg-[hsl(0,0%,10%)]">
+              <p className="text-[10px] text-[hsl(0,0%,45%)] mb-0.5">Top Segment</p>
+              <p className="text-[12px] text-[hsl(0,0%,75%)]">{topSegment}</p>
+            </div>
+          )}
+          {keyDriver && (
+            <div className="p-2.5 rounded-md bg-[hsl(0,0%,10%)]">
+              <p className="text-[10px] text-[hsl(0,0%,45%)] mb-0.5">Key Driver</p>
+              <p className="text-[12px] text-[hsl(0,0%,75%)]">{keyDriver}</p>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
 }
 
-// Helper to get node label from nodes array
-function getNodeLabel(nodeId: string, nodes: { id: string; data: { label?: string } }[]): string {
-  const node = nodes.find((n) => n.id === nodeId);
-  return node?.data?.label || nodeId.split("-")[0];
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.round((ms % 60000) / 1000);
+  return `${minutes}m ${seconds}s`;
 }

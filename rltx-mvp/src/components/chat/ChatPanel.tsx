@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useChatStore } from "@/stores/chat";
+import { useCanvasStore } from "@/stores/canvas";
 import { ChatMessage } from "./ChatMessage";
 import { cn } from "@/lib/utils";
 import { Plus, History, ArrowUp, Loader2 } from "lucide-react";
@@ -18,12 +19,14 @@ interface WorkflowData {
 interface ChatPanelProps {
   workflowId: string;
   onWorkflowGenerated?: (workflow: WorkflowData) => void;
+  onRunSimulation?: () => void;
   className?: string;
 }
 
 export function ChatPanel({
   workflowId,
   onWorkflowGenerated,
+  onRunSimulation,
   className,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -63,27 +66,102 @@ export function ChatPanel({
     addUserMessage(trimmed);
     setIsGenerating(true);
 
+    // Add timeout with AbortController
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // Increased to 60s for multi-turn
+
     try {
+      console.log("[ChatPanel] Sending message:", trimmed);
+
+      // Get current canvas state for context
+      const canvasState = useCanvasStore.getState();
+      const currentWorkflow = canvasState.nodes.length > 0
+        ? {
+            nodes: canvasState.nodes.map(n => ({
+              id: n.id,
+              primitiveId: (n.data as { primitiveId?: string })?.primitiveId,
+              label: (n.data as { label?: string })?.label,
+              config: (n.data as { config?: unknown })?.config,
+            })),
+            edges: canvasState.edges.map(e => ({
+              source: e.source,
+              target: e.target,
+            })),
+          }
+        : null;
+
+      // Build conversation history for context (excluding current message which we just added)
+      const conversationHistory = messages.map(m => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+        hasWorkflow: !!m.workflow,
+      }));
+
       const response = await fetch("/api/chat/compose", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: trimmed,
           workflowId,
+          conversationHistory,
+          currentWorkflow,
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
+
+      console.log("[ChatPanel] Response status:", response.status);
 
       if (!response.ok) {
-        throw new Error("Failed to compose workflow");
+        const errorText = await response.text();
+        console.error("[ChatPanel] API error:", errorText);
+        throw new Error(`Failed to compose workflow: ${response.status}`);
       }
 
       const data = await response.json();
-      addAssistantMessage(data.message, data.workflow);
+      console.log("[ChatPanel] Received data:", data);
+
+      if (!data.message) {
+        console.warn("[ChatPanel] No message in response, using fallback");
+        addAssistantMessage("I received your request but couldn't generate a proper response. Please try again with a specific question like 'Would customers buy this product?' or 'How would Congress vote on this bill?'");
+      } else {
+        // Handle different intents
+        const canvasStore = useCanvasStore.getState();
+
+        if (data.intent === 'refine' && data.addNodes && data.addNodes.length > 0) {
+          // Add new nodes to canvas
+          for (const node of data.addNodes) {
+            canvasStore.addNode(node);
+          }
+          // Add edges if provided
+          if (data.addEdges && data.addEdges.length > 0) {
+            canvasStore.setEdges((edges) => [...edges, ...data.addEdges]);
+          }
+          addAssistantMessage(data.message, undefined); // No workflow card, nodes added directly
+        } else if (data.intent === 'configure' && data.configUpdates && data.configUpdates.length > 0) {
+          // Update node configurations
+          for (const update of data.configUpdates) {
+            canvasStore.updateNodeData(update.nodeId, {
+              config: { ...(canvasStore.nodes.find(n => n.id === update.nodeId)?.data as { config?: Record<string, unknown> })?.config, ...update.config }
+            });
+          }
+          addAssistantMessage(data.message, undefined);
+        } else {
+          // Standard response with optional workflow
+          addAssistantMessage(data.message, data.workflow);
+        }
+      }
     } catch (error) {
-      console.error("Chat error:", error);
-      addAssistantMessage(
-        "I couldn't process that request. Please try again."
-      );
+      console.error("[ChatPanel] Error:", error);
+      if (error instanceof Error && error.name === "AbortError") {
+        addAssistantMessage(
+          "Request timed out after 30 seconds. The server might be busy - please try again."
+        );
+      } else {
+        addAssistantMessage(
+          "I couldn't process that request. Please try again with a simulation question."
+        );
+      }
     } finally {
       setIsGenerating(false);
     }
@@ -101,13 +179,55 @@ export function ChatPanel({
   };
 
   const canSend = inputValue.trim() && !isGenerating;
+  const canvasStore = useCanvasStore.getState();
+  const hasWorkflowOnCanvas = canvasStore.nodes.length > 0;
   const showSuggestions = messages.length === 0;
+  const showFollowUps = messages.length > 0 && hasWorkflowOnCanvas && !isGenerating;
 
+  // Initial suggestions for empty chat
   const suggestions = [
-    "Should we raise prices by 15%?",
-    "What if a competitor enters our market?",
-    "Evaluate this acquisition target",
+    "Would customers buy a subscription at $25/month?",
+    "How would competitors respond if we cut prices?",
+    "How would Congress vote on a TikTok ban?",
   ];
+
+  // Generate contextual follow-up suggestions based on conversation and workflow
+  const followUpSuggestions = useMemo(() => {
+    if (!hasWorkflowOnCanvas) return [];
+
+    const lastMessage = messages[messages.length - 1];
+    const lastContent = lastMessage?.content?.toLowerCase() || '';
+    const nodeTypes = canvasStore.nodes.map(n =>
+      (n.data as { primitiveId?: string })?.primitiveId || ''
+    );
+
+    const hasSegmentation = nodeTypes.some(t => t.includes('segment'));
+    const hasGameTheory = nodeTypes.some(t => t.includes('game_theory'));
+    const hasScenario = nodeTypes.some(t => t.includes('scenario'));
+    const hasMonteCarlo = nodeTypes.some(t => t.includes('monte_carlo'));
+
+    const contextualSuggestions: string[] = [];
+
+    // Add suggestions based on what's missing
+    if (!hasSegmentation) {
+      contextualSuggestions.push("Break down results by demographics");
+    }
+    if (!hasGameTheory && !lastContent.includes('competitor')) {
+      contextualSuggestions.push("Add competitor response modeling");
+    }
+    if (!hasScenario && hasMonteCarlo) {
+      contextualSuggestions.push("Compare multiple scenarios");
+    }
+
+    // Add precision suggestion if small sample
+    contextualSuggestions.push("Increase sample to 5,000 agents");
+
+    // Add explanation option
+    contextualSuggestions.push("How does this simulation work?");
+
+    // Return top 4 most relevant
+    return contextualSuggestions.slice(0, 4);
+  }, [messages, hasWorkflowOnCanvas, canvasStore.nodes]);
 
   return (
     <div className={cn("flex flex-col bg-[hsl(0,0%,7%)]", className)}>
@@ -161,6 +281,7 @@ export function ChatPanel({
                   key={message.id}
                   message={message}
                   onWorkflowClick={onWorkflowGenerated}
+                  onRunSimulation={onRunSimulation}
                 />
               ))}
               {isGenerating && (
@@ -176,7 +297,7 @@ export function ChatPanel({
 
         {/* Input area - Cursor-style */}
         <div className="px-3 pb-3 pt-2 flex-shrink-0">
-        {/* Suggestions - above input */}
+        {/* Initial suggestions - when chat is empty */}
         {showSuggestions && (
           <div className="mb-3">
             <p className="text-[11px] text-[hsl(0,0%,40%)] mb-2 px-1">Try asking</p>
@@ -186,6 +307,24 @@ export function ChatPanel({
                   key={suggestion}
                   onClick={() => handleSend(suggestion)}
                   className="w-full text-left px-2 py-1.5 text-[12px] text-[hsl(0,0%,55%)] hover:text-[hsl(0,0%,75%)] hover:bg-[hsl(0,0%,10%)] rounded transition-colors duration-100 leading-relaxed"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Follow-up suggestions - when workflow exists */}
+        {showFollowUps && (
+          <div className="mb-3">
+            <p className="text-[11px] text-[hsl(0,0%,40%)] mb-2 px-1">Refine your simulation</p>
+            <div className="flex flex-wrap gap-1.5">
+              {followUpSuggestions.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  onClick={() => handleSend(suggestion)}
+                  className="px-2 py-1 text-[11px] text-[hsl(0,0%,55%)] hover:text-[hsl(0,0%,75%)] bg-[hsl(0,0%,10%)] hover:bg-[hsl(0,0%,12%)] border border-[hsl(0,0%,18%)] rounded-md transition-colors duration-100"
                 >
                   {suggestion}
                 </button>

@@ -91,12 +91,18 @@ const config: Config = {
           "0%": { strokeDashoffset: "24" },
           "100%": { strokeDashoffset: "0" },
         },
+        "highlight-pulse": {
+          "0%": { boxShadow: "0 0 0 0 rgba(99, 102, 241, 0.4)" },
+          "50%": { boxShadow: "0 0 20px 4px rgba(99, 102, 241, 0.3)" },
+          "100%": { boxShadow: "0 0 0 0 rgba(99, 102, 241, 0)" },
+        },
       },
       animation: {
         "fade-in": "fade-in 0.15s ease-out",
         "slide-up": "slide-up 0.2s ease-out",
         "pulse-subtle": "pulse-subtle 2s ease-in-out infinite",
         "flow": "flow 0.5s linear infinite",
+        "highlight-pulse": "highlight-pulse 1.5s ease-out",
       },
     },
   },

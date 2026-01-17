@@ -2,22 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { workflows } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import {
+  getWorkflow,
+  updateWorkflow as updateMockWorkflow,
+  deleteWorkflow as deleteMockWorkflow,
+} from "@/lib/mock-db";
 
 interface RouteParams {
   params: { id: string };
 }
-
-// Demo workflow for when database is not available
-const getDemoWorkflow = (id: string) => ({
-  id,
-  name: "Market Expansion Analysis",
-  question: "Should we expand into the European market?",
-  graph: { nodes: [], edges: [] },
-  status: "draft",
-  createdBy: "demo-user",
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-});
 
 // GET /api/workflows/[id] - Get a single workflow
 export async function GET(request: NextRequest, { params }: RouteParams) {
@@ -26,7 +19,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     // Demo mode without database
     if (!db) {
-      return NextResponse.json(getDemoWorkflow(id));
+      const workflow = getWorkflow(id);
+      if (workflow) {
+        return NextResponse.json(workflow);
+      }
+      return NextResponse.json(
+        { error: "Workflow not found" },
+        { status: 404 }
+      );
     }
 
     const [workflow] = await db
@@ -35,14 +35,19 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       .where(eq(workflows.id, id));
 
     if (!workflow) {
-      return NextResponse.json(getDemoWorkflow(id));
+      return NextResponse.json(
+        { error: "Workflow not found" },
+        { status: 404 }
+      );
     }
 
     return NextResponse.json(workflow);
   } catch (error) {
     console.error("Failed to fetch workflow:", error);
-    const { id } = params;
-    return NextResponse.json(getDemoWorkflow(id));
+    return NextResponse.json(
+      { error: "Failed to fetch workflow" },
+      { status: 500 }
+    );
   }
 }
 
@@ -54,11 +59,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     // Demo mode without database
     if (!db) {
-      return NextResponse.json({
-        ...getDemoWorkflow(id),
-        ...body,
-        updatedAt: new Date().toISOString(),
-      });
+      const updated = updateMockWorkflow(id, body);
+      if (!updated) {
+        return NextResponse.json(
+          { error: "Workflow not found" },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json(updated);
     }
 
     const [workflow] = await db
@@ -94,7 +102,13 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     // Demo mode without database
     if (!db) {
-      return NextResponse.json({ success: true });
+      if (deleteMockWorkflow(id)) {
+        return NextResponse.json({ success: true });
+      }
+      return NextResponse.json(
+        { error: "Workflow not found" },
+        { status: 404 }
+      );
     }
 
     const [deleted] = await db

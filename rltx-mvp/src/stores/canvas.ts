@@ -39,6 +39,34 @@ interface ValidationResult {
 
 const MAX_HISTORY_SIZE = 50;
 
+// SSE Event type from execution stream
+interface ExecutionEvent {
+  type:
+    | "execution:started"
+    | "node:started"
+    | "node:progress"
+    | "node:completed"
+    | "node:error"
+    | "execution:completed"
+    | "execution:error";
+  executionId: string;
+  nodeId?: string;
+  progress?: number;
+  message?: string;
+  result?: unknown;
+  error?: string;
+  timestamp: string;
+}
+
+// Execution progress tracking
+interface ExecutionProgress {
+  nodeProgress: Map<string, { status: string; progress: number; message?: string }>;
+  overallProgress: number;
+  currentNode: string | null;
+  startTime: Date;
+  estimatedCompletion?: Date;
+}
+
 interface CanvasState {
   // Core state
   workflowId: string | null;
@@ -50,6 +78,9 @@ interface CanvasState {
   // Execution state
   isExecuting: boolean;
   executionId: string | null;
+  executionProgress: ExecutionProgress | null;
+  executionError: string | null;
+  executionResult: unknown | null;
 
   // History for undo/redo
   history: HistorySnapshot[];
@@ -99,18 +130,31 @@ interface CanvasState {
 
   // Execution actions
   startExecution: (executionId: string) => void;
-  updateNodeState: (nodeId: string, state: NodeState, output?: unknown) => void;
+  updateNodeState: (nodeId: string, state: NodeState, output?: unknown, progress?: number) => void;
   completeExecution: () => void;
   resetExecution: () => void;
+
+  // SSE Streaming actions
+  connectToExecution: (executionId: string) => void;
+  disconnectFromExecution: () => void;
+  handleExecutionEvent: (event: ExecutionEvent) => void;
+  runWorkflow: () => Promise<void>;
 
   // Workflow actions
   loadWorkflow: (nodes: Node[], edges: Edge[]) => void;
   clearCanvas: () => void;
   getGraph: () => { nodes: Node[]; edges: Edge[] };
 
+  // View actions
+  shouldFitView: boolean;
+  clearFitView: () => void;
+
   // Playbook actions
   addPlaybook: (playbookId: string, position: { x: number; y: number }) => void;
 }
+
+// Store EventSource instance outside of state (not serializable)
+let eventSourceInstance: EventSource | null = null;
 
 export const useCanvasStore = create<CanvasState>((set, get) => ({
   // Initial state
@@ -121,10 +165,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   selectedNodeIds: new Set(),
   isExecuting: false,
   executionId: null,
+  executionProgress: null,
+  executionError: null,
+  executionResult: null,
   history: [],
   historyIndex: -1,
   clipboard: null,
   zoomLevel: 1,
+  shouldFitView: false,
 
   // Setters
   setWorkflowId: (id) => set({ workflowId: id }),
@@ -519,7 +567,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       })),
     })),
 
-  updateNodeState: (nodeId, nodeState, output) =>
+  updateNodeState: (nodeId, nodeState, output, progress) =>
     set((state) => ({
       nodes: state.nodes.map((node) =>
         node.id === nodeId
@@ -529,6 +577,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
                 ...node.data,
                 state: nodeState,
                 ...(output !== undefined && { output }),
+                ...(progress !== undefined && { progress }),
               },
             }
           : node
@@ -540,10 +589,19 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       isExecuting: false,
     }),
 
-  resetExecution: () =>
+  resetExecution: () => {
+    // Disconnect from any existing SSE stream
+    if (eventSourceInstance) {
+      eventSourceInstance.close();
+      eventSourceInstance = null;
+    }
+
     set((state) => ({
       isExecuting: false,
       executionId: null,
+      executionProgress: null,
+      executionError: null,
+      executionResult: null,
       nodes: state.nodes.map((node) => ({
         ...node,
         data: {
@@ -551,27 +609,340 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           state: "idle" as NodeState,
           output: undefined,
           error: undefined,
+          progress: undefined,
         },
       })),
-    })),
+    }));
+  },
+
+  // ==================== SSE STREAMING ====================
+
+  connectToExecution: (executionId: string) => {
+    // Close any existing connection
+    if (eventSourceInstance) {
+      eventSourceInstance.close();
+    }
+
+    // Create new EventSource connection
+    eventSourceInstance = new EventSource(`/api/executions/stream?id=${executionId}`);
+
+    const handleEvent = get().handleExecutionEvent;
+
+    eventSourceInstance.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data) as ExecutionEvent;
+        handleEvent(data);
+      } catch (err) {
+        console.error("Failed to parse SSE event:", err);
+      }
+    };
+
+    eventSourceInstance.onerror = (error) => {
+      console.error("SSE connection error:", error);
+      set({ executionError: "Connection to execution stream lost" });
+    };
+  },
+
+  disconnectFromExecution: () => {
+    if (eventSourceInstance) {
+      eventSourceInstance.close();
+      eventSourceInstance = null;
+    }
+  },
+
+  handleExecutionEvent: (event: ExecutionEvent) => {
+    const state = get();
+
+    switch (event.type) {
+      case "execution:started":
+        set({
+          isExecuting: true,
+          executionId: event.executionId,
+          executionProgress: {
+            nodeProgress: new Map(),
+            overallProgress: 0,
+            currentNode: null,
+            startTime: new Date(),
+          },
+        });
+        break;
+
+      case "node:started":
+        if (event.nodeId) {
+          // Find the node by matching part of the ID (since IDs might have prefixes)
+          const targetNode = state.nodes.find(
+            (n) => n.id.includes(event.nodeId!) || event.nodeId!.includes(n.id.split("-").slice(0, -1).join("-"))
+          );
+
+          if (targetNode) {
+            set((s) => ({
+              nodes: s.nodes.map((node) =>
+                node.id === targetNode.id
+                  ? {
+                      ...node,
+                      data: {
+                        ...node.data,
+                        state: "running" as NodeState,
+                        progress: 0,
+                      },
+                    }
+                  : node
+              ),
+              executionProgress: s.executionProgress
+                ? {
+                    ...s.executionProgress,
+                    currentNode: targetNode.id,
+                    nodeProgress: new Map(s.executionProgress.nodeProgress).set(
+                      targetNode.id,
+                      { status: "running", progress: 0, message: event.message }
+                    ),
+                  }
+                : null,
+            }));
+          }
+        }
+        break;
+
+      case "node:progress":
+        if (event.nodeId && event.progress !== undefined) {
+          const targetNode = state.nodes.find(
+            (n) => n.id.includes(event.nodeId!) || event.nodeId!.includes(n.id.split("-").slice(0, -1).join("-"))
+          );
+
+          if (targetNode) {
+            set((s) => ({
+              nodes: s.nodes.map((node) =>
+                node.id === targetNode.id
+                  ? {
+                      ...node,
+                      data: {
+                        ...node.data,
+                        progress: event.progress,
+                      },
+                    }
+                  : node
+              ),
+              executionProgress: s.executionProgress
+                ? {
+                    ...s.executionProgress,
+                    nodeProgress: new Map(s.executionProgress.nodeProgress).set(
+                      targetNode.id,
+                      { status: "running", progress: event.progress!, message: event.message }
+                    ),
+                  }
+                : null,
+            }));
+          }
+        }
+        break;
+
+      case "node:completed":
+        if (event.nodeId) {
+          const targetNode = state.nodes.find(
+            (n) => n.id.includes(event.nodeId!) || event.nodeId!.includes(n.id.split("-").slice(0, -1).join("-"))
+          );
+
+          if (targetNode) {
+            set((s) => ({
+              nodes: s.nodes.map((node) =>
+                node.id === targetNode.id
+                  ? {
+                      ...node,
+                      data: {
+                        ...node.data,
+                        state: "completed" as NodeState,
+                        progress: 100,
+                        output: event.result,
+                      },
+                    }
+                  : node
+              ),
+              executionProgress: s.executionProgress
+                ? {
+                    ...s.executionProgress,
+                    nodeProgress: new Map(s.executionProgress.nodeProgress).set(
+                      targetNode.id,
+                      { status: "completed", progress: 100, message: event.message }
+                    ),
+                    // Calculate overall progress based on completed nodes
+                    overallProgress: Math.round(
+                      (Array.from(s.executionProgress.nodeProgress.values()).filter(
+                        (p) => p.status === "completed"
+                      ).length +
+                        1) /
+                        s.nodes.length *
+                        100
+                    ),
+                  }
+                : null,
+            }));
+          }
+        }
+        break;
+
+      case "node:error":
+        if (event.nodeId) {
+          const targetNode = state.nodes.find(
+            (n) => n.id.includes(event.nodeId!) || event.nodeId!.includes(n.id.split("-").slice(0, -1).join("-"))
+          );
+
+          if (targetNode) {
+            set((s) => ({
+              nodes: s.nodes.map((node) =>
+                node.id === targetNode.id
+                  ? {
+                      ...node,
+                      data: {
+                        ...node.data,
+                        state: "error" as NodeState,
+                        error: event.error,
+                      },
+                    }
+                  : node
+              ),
+            }));
+          }
+        }
+        break;
+
+      case "execution:completed":
+        // Close SSE connection
+        if (eventSourceInstance) {
+          eventSourceInstance.close();
+          eventSourceInstance = null;
+        }
+
+        set({
+          isExecuting: false,
+          executionResult: event.result,
+          executionProgress: state.executionProgress
+            ? {
+                ...state.executionProgress,
+                overallProgress: 100,
+              }
+            : null,
+        });
+        break;
+
+      case "execution:error":
+        // Close SSE connection
+        if (eventSourceInstance) {
+          eventSourceInstance.close();
+          eventSourceInstance = null;
+        }
+
+        set({
+          isExecuting: false,
+          executionError: event.error || "Execution failed",
+        });
+        break;
+    }
+  },
+
+  runWorkflow: async () => {
+    const state = get();
+
+    // Don't run if already executing
+    if (state.isExecuting) {
+      return;
+    }
+
+    // Reset any previous execution state
+    state.resetExecution();
+
+    try {
+      // Start execution via API
+      const response = await fetch("/api/executions/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workflowId: state.workflowId,
+          nodes: state.nodes.map((n) => ({
+            id: n.id,
+            primitiveId: (n.data as { primitiveId: string })?.primitiveId,
+            config: (n.data as { config: unknown })?.config,
+          })),
+          edges: state.edges.map((e) => ({
+            source: e.source,
+            target: e.target,
+            sourceHandle: e.sourceHandle,
+            targetHandle: e.targetHandle,
+          })),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to start execution");
+      }
+
+      const data = await response.json();
+      const executionId = data.executionId;
+
+      // Set initial execution state
+      set((s) => ({
+        isExecuting: true,
+        executionId,
+        executionProgress: {
+          nodeProgress: new Map(),
+          overallProgress: 0,
+          currentNode: null,
+          startTime: new Date(),
+        },
+        nodes: s.nodes.map((node) => ({
+          ...node,
+          data: { ...node.data, state: "pending" as NodeState },
+        })),
+      }));
+
+      // Connect to SSE stream
+      state.connectToExecution(executionId);
+    } catch (error) {
+      set({
+        executionError: error instanceof Error ? error.message : "Failed to start execution",
+      });
+    }
+  },
 
   // ==================== WORKFLOW ====================
 
   loadWorkflow: (nodes, edges) => {
+    // Mark nodes as new for highlight animation
+    const nodesWithNewFlag = nodes.map((node) => ({
+      ...node,
+      data: {
+        ...node.data,
+        isNew: true,
+      },
+    }));
+
     set({
-      nodes,
+      nodes: nodesWithNewFlag,
       edges,
       selectedNodeId: null,
       selectedNodeIds: new Set(),
       isExecuting: false,
       executionId: null,
+      shouldFitView: true, // Trigger auto-fit
       history: [{
-        nodes: JSON.parse(JSON.stringify(nodes)),
+        nodes: JSON.parse(JSON.stringify(nodesWithNewFlag)),
         edges: JSON.parse(JSON.stringify(edges)),
         timestamp: Date.now(),
       }],
       historyIndex: 0,
     });
+
+    // Clear isNew flag after animation duration
+    setTimeout(() => {
+      set((state) => ({
+        nodes: state.nodes.map((node) => ({
+          ...node,
+          data: {
+            ...node.data,
+            isNew: false,
+          },
+        })),
+      }));
+    }, 1500); // Match animation duration
   },
 
   clearCanvas: () => {
@@ -591,6 +962,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     nodes: get().nodes,
     edges: get().edges,
   }),
+
+  clearFitView: () => set({ shouldFitView: false }),
 
   // ==================== PLAYBOOK ====================
 

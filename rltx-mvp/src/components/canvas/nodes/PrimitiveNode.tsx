@@ -100,6 +100,8 @@ interface PrimitiveNodeData {
   state: NodeState;
   output?: unknown;
   error?: string;
+  progress?: number;
+  isNew?: boolean;
   timing?: {
     startedAt: string;
     completedAt: string;
@@ -146,6 +148,9 @@ function PrimitiveNodeComponent({ id, data, selected }: NodeProps) {
   };
 
   const style = stateStyles[nodeData.state];
+
+  // Highlight animation for new nodes
+  const isNewNode = nodeData.isNew;
   const IconComponent = iconMap[nodeData.icon] || Database;
 
   // ==================== COMPACT VIEW (Zoomed Out) ====================
@@ -158,7 +163,8 @@ function PrimitiveNodeComponent({ id, data, selected }: NodeProps) {
           style.border,
           style.glow,
           isSelected &&
-            "ring-1 ring-[hsl(0,0%,40%)] ring-offset-1 ring-offset-[hsl(0,0%,4%)]"
+            "ring-1 ring-[hsl(0,0%,40%)] ring-offset-1 ring-offset-[hsl(0,0%,4%)]",
+          isNewNode && "animate-highlight-pulse"
         )}
       >
         {/* Category accent (left edge) */}
@@ -206,7 +212,8 @@ function PrimitiveNodeComponent({ id, data, selected }: NodeProps) {
           style.border,
           style.glow,
           isSelected &&
-            "ring-1 ring-[hsl(0,0%,40%)] ring-offset-1 ring-offset-[hsl(0,0%,4%)]"
+            "ring-1 ring-[hsl(0,0%,40%)] ring-offset-1 ring-offset-[hsl(0,0%,4%)]",
+          isNewNode && "animate-highlight-pulse"
         )}
       >
         {/* Category accent (left edge) */}
@@ -254,7 +261,8 @@ function PrimitiveNodeComponent({ id, data, selected }: NodeProps) {
         style.border,
         style.glow,
         isSelected &&
-          "ring-1 ring-[hsl(0,0%,40%)] ring-offset-1 ring-offset-[hsl(0,0%,4%)]"
+          "ring-1 ring-[hsl(0,0%,40%)] ring-offset-1 ring-offset-[hsl(0,0%,4%)]",
+        isNewNode && "animate-highlight-pulse"
       )}
     >
       {/* Category accent (left edge) */}
@@ -339,10 +347,19 @@ function PrimitiveNodeComponent({ id, data, selected }: NodeProps) {
             {nodeData.state === "running" && (
               <div className="flex items-center gap-2">
                 <div className="flex-1 h-1 bg-[hsl(0,0%,18%)] rounded-full overflow-hidden">
-                  <div className="h-full w-1/2 bg-blue-500/60 rounded-full animate-pulse" />
+                  {nodeData.progress !== undefined && nodeData.progress > 0 ? (
+                    <div
+                      className="h-full bg-blue-500/70 rounded-full transition-all duration-150"
+                      style={{ width: `${nodeData.progress}%` }}
+                    />
+                  ) : (
+                    <div className="h-full w-1/2 bg-blue-500/60 rounded-full animate-pulse" />
+                  )}
                 </div>
-                <span className="text-[10px] text-[hsl(0,0%,50%)] tabular-nums">
-                  Running
+                <span className="text-[10px] text-[hsl(0,0%,50%)] tabular-nums min-w-[36px] text-right">
+                  {nodeData.progress !== undefined && nodeData.progress > 0
+                    ? `${nodeData.progress}%`
+                    : "Running"}
                 </span>
               </div>
             )}

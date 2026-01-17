@@ -223,6 +223,54 @@ Provide recommendation in this exact JSON structure:
   "timeline": "when to act"
 }`,
 
+  // ========== SPEC PRIMITIVES ==========
+
+  "agent.reason": `You are role-playing as a specific person with the following background:
+
+{persona}
+
+CONTEXT:
+{context}
+
+QUESTION: {question}
+
+Based on your background, values, and life circumstances, provide your answer and reasoning.
+
+Respond in this exact JSON structure:
+{
+  "answer": "<your answer - for binary questions use 'yes' or 'no', for categorical use the option name, for numeric use a number>",
+  "confidence": "<high|medium|low> - how confident you are in this answer",
+  "reasoning": "<2-3 sentences explaining why you answered this way based on your background>",
+  "factors": ["<key factor 1>", "<key factor 2>", ...]
+}`,
+
+  "analyze.factors": `You are analyzing simulation results to identify key drivers.
+
+SIMULATION RESULTS:
+{simulation_result}
+
+AGENT REASONING SAMPLES:
+{agent_results}
+
+Analyze what drove the predictions and respond in this exact JSON structure:
+{
+  "feature_importance": [
+    {"feature": "feature name", "importance": 0.0-1.0, "direction": "positive|negative|mixed", "description": "how it influences outcome"}
+  ],
+  "reasoning_themes": [
+    {"theme": "theme description", "frequency": 0.0-1.0, "sentiment": "positive|negative|neutral", "example_quotes": ["quote 1", "quote 2"]}
+  ],
+  "key_drivers": [
+    {"driver": "driver name", "impact": "high|medium|low", "mechanism": "how it affects outcome", "demographic_variation": "which groups affected most"}
+  ],
+  "surprising_findings": ["unexpected insight 1", ...],
+  "confidence_assessment": {
+    "overall_confidence": 0.0-1.0,
+    "limitations": ["limitation 1", ...],
+    "recommendations_for_improvement": ["recommendation 1", ...]
+  }
+}`,
+
   "output.report": `Generate board-ready documentation.
 
 RECOMMENDATION:
@@ -247,11 +295,129 @@ Create a {format} report in this exact JSON structure:
   "keyMetrics": [{"name": "metric", "value": "value", "trend": "up|down|stable"}],
   "appendix": ["supporting detail 1", ...]
 }`,
+
+  // ========== VIP PERSONA SIMULATIONS ==========
+
+  "sim.vip_decision": `You are simulating how a specific VIP would respond to a scenario.
+
+VIP PROFILE:
+{persona}
+
+SCENARIO:
+{scenario}
+
+QUESTION: {question}
+
+Based on this person's background, values, communication style, and known positions, predict how they would respond.
+
+Respond in this exact JSON structure:
+{
+  "decision": "<their likely decision or stance>",
+  "confidence": "<high|medium|low>",
+  "reasoning": "<2-4 sentences explaining why based on their profile>",
+  "factors": ["<key factor from their profile 1>", "<factor 2>", ...],
+  "quotable_response": "<how they might phrase their response publicly>",
+  "private_considerations": ["<what they might think but not say publicly>"]
+}`,
+
+  "sim.congressional_vote": `You are simulating a congressional vote by role-playing as individual legislators.
+
+BILL/RESOLUTION:
+{scenario}
+
+LEGISLATORS TO SIMULATE:
+{personaList}
+
+For each legislator, predict their vote based on their profile, known positions, and political considerations.
+
+Respond in this exact JSON structure:
+{
+  "votes": [
+    {
+      "name": "<legislator name>",
+      "party": "<party>",
+      "state": "<state if known>",
+      "vote": "<yea|nay|abstain|present>",
+      "confidence": 0.0-1.0,
+      "reasoning": "<why they voted this way>",
+      "factors": ["<key factor 1>", "<factor 2>"]
+    }
+  ],
+  "tally": {
+    "yea": <count>,
+    "nay": <count>,
+    "abstain": <count>,
+    "present": <count>
+  },
+  "outcome": "<passes|fails|uncertain>",
+  "margin": "<margin of victory/defeat>",
+  "key_swing_votes": ["<name of key undecided or surprising votes>"],
+  "analysis": "<overall analysis of the vote dynamics>"
+}`,
+
+  "sim.boardroom": `You are simulating a corporate board discussion by role-playing as individual board members/executives.
+
+TOPIC FOR DISCUSSION:
+{scenario}
+
+PARTICIPANTS:
+{personaList}
+
+For each executive, simulate their position and arguments based on their role, background, and known decision-making style.
+
+Respond in this exact JSON structure:
+{
+  "positions": [
+    {
+      "name": "<executive name>",
+      "role": "<their role>",
+      "stance": "<support|oppose|neutral|conditional>",
+      "arguments": ["<argument 1>", "<argument 2>"],
+      "concerns": ["<concern 1>"],
+      "influence_weight": 0.0-1.0
+    }
+  ],
+  "likely_outcome": "<approved|rejected|tabled|modified>",
+  "key_debates": ["<point of contention 1>"],
+  "compromises_needed": ["<what concessions might be made>"],
+  "timeline": "<expected decision timeline>"
+}`,
+
+  "sim.stakeholder_analysis": `You are analyzing how different stakeholders would respond to a proposed action or policy.
+
+PROPOSAL:
+{scenario}
+
+STAKEHOLDERS:
+{personaList}
+
+Analyze each stakeholder's likely response based on their profile and interests.
+
+Respond in this exact JSON structure:
+{
+  "stakeholder_responses": [
+    {
+      "name": "<stakeholder name>",
+      "sector": "<their sector/vertical>",
+      "initial_reaction": "<supportive|opposed|cautious|enthusiastic>",
+      "intensity": 0.0-1.0,
+      "key_concerns": ["<concern 1>"],
+      "potential_actions": ["<what they might do in response>"],
+      "influence_on_outcome": 0.0-1.0,
+      "coalition_potential": ["<who they might align with>"]
+    }
+  ],
+  "overall_reception": "<favorable|unfavorable|mixed>",
+  "critical_stakeholders": ["<most important to win over>"],
+  "risk_factors": ["<key risks from stakeholder opposition>"],
+  "recommended_engagement": ["<how to approach key stakeholders>"]
+}`,
 };
 
 export class LLMExecutor extends BaseExecutor {
   type: ExecutorType = "llm";
   primitiveIds = [
+    // Legacy primitives
     "reason.analyze",
     "reason.compare",
     "reason.summarize",
@@ -263,6 +429,14 @@ export class LLMExecutor extends BaseExecutor {
     "causal.explain",
     "output.recommendation",
     "output.report",
+    // Spec primitives
+    "agent.reason",
+    "analyze.factors",
+    // VIP persona simulations
+    "sim.vip_decision",
+    "sim.congressional_vote",
+    "sim.boardroom",
+    "sim.stakeholder_analysis",
   ];
 
   private client: Anthropic | null = null;
@@ -373,6 +547,24 @@ export class LLMExecutor extends BaseExecutor {
     config: Record<string, unknown>
   ): string {
     let prompt = template;
+
+    // Special handling for personaList - format for multi-persona simulations
+    if (inputs.personaList && Array.isArray(inputs.personaList)) {
+      const formattedList = (inputs.personaList as Array<{ name: string; formatted: string }>)
+        .map((p, i) => `\n--- PERSONA ${i + 1}: ${p.name} ---\n${p.formatted}`)
+        .join("\n");
+      inputs = { ...inputs, personaList: formattedList };
+    }
+
+    // Special handling for personas array - extract names and details
+    if (inputs.personas && Array.isArray(inputs.personas)) {
+      const personas = inputs.personas as Array<{ name: string; role?: string; affiliation?: string }>;
+      inputs = {
+        ...inputs,
+        personaNames: personas.map(p => p.name).join(", "),
+        personaCount: personas.length,
+      };
+    }
 
     // Replace input placeholders
     for (const [key, value] of Object.entries(inputs)) {

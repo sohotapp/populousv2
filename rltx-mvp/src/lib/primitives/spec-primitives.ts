@@ -26,6 +26,7 @@ export const designTokens = {
   // Borders
   borderSubtle: "hsl(0, 0%, 12%)",
   borderDefault: "hsl(0, 0%, 15%)",
+  borderHover: "hsl(0, 0%, 20%)",
   borderFocus: "hsl(0, 0%, 25%)",
 
   // Text

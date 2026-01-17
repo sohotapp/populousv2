@@ -712,6 +712,102 @@ export const playbookPatterns: Record<string, PlaybookPattern> = {
     defaultValues: {},
     warnings: [],
   },
+
+  // ========== PATTERN 7: CONGRESSIONAL VOTE ==========
+  congressional_vote: {
+    id: "congressional_vote",
+    name: "Congressional Vote Simulation",
+    description: "Simulates how US Congress would vote on legislation. Uses senator personas with voting records and SSR calibration for realistic vote predictions.",
+    questionTypes: ["congressional_vote", "political"],
+    keywords: ["congress", "senate", "vote", "legislation", "bill", "tiktok", "ban", "law", "house", "representative", "senator"],
+    structure: {
+      nodes: [
+        {
+          id: "scenario",
+          primitive: "branch.scenario",
+          name: "Define Legislation",
+          config: {
+            scenario_name: "tiktok_ban",
+            description: "TikTok divestiture bill before the Senate",
+          },
+          position: { x: 250, y: 50 },
+        },
+        {
+          id: "vote_simulation",
+          primitive: "orchestrate.congressional_vote",
+          name: "Senate Vote Simulation",
+          config: {
+            sampleSize: 100,
+            scenario: "tiktok_ban",
+            withChinaRetaliation: false,
+          },
+          position: { x: 250, y: 200 },
+        },
+        {
+          id: "segment",
+          primitive: "population.segment",
+          name: "Party Analysis",
+          config: {
+            segment_by: ["party", "state", "ideology"],
+          },
+          position: { x: 100, y: 350 },
+        },
+        {
+          id: "factors",
+          primitive: "analyze.factors",
+          name: "Vote Driver Analysis",
+          config: {
+            analysis_type: "both",
+          },
+          position: { x: 400, y: 350 },
+        },
+      ],
+      edges: [
+        { from: "scenario", to: "vote_simulation" },
+        { from: "vote_simulation", to: "segment" },
+        { from: "vote_simulation", to: "factors" },
+      ],
+    },
+    executionPlan: {
+      estimatedAgents: 100,
+      estimatedLLMCalls: 100,
+      parallelizable: true,
+      estimatedTimeSeconds: 60,
+      estimatedCostUSD: 3.0,
+    },
+    requiredInputs: [],
+    defaultValues: {
+      scenario: "tiktok_ban",
+      withChinaRetaliation: false,
+    },
+    warnings: [
+      "Vote predictions are calibrated using SSR but actual outcomes depend on many factors",
+      "Senator personas are based on voting records and may not capture recent position changes",
+    ],
+  },
+
+  // ========== PATTERN 8: CONVERSATIONAL ==========
+  conversational: {
+    id: "conversational",
+    name: "Getting Started",
+    description: "Help users understand what RLTX can do and guide them to useful simulations.",
+    questionTypes: ["help", "greeting"],
+    keywords: ["help", "hello", "hey", "what can you do", "how does this work"],
+    structure: {
+      nodes: [], // No nodes for conversational pattern
+      edges: [],
+    },
+    executionPlan: {
+      estimatedAgents: 0,
+      estimatedLLMCalls: 0,
+      parallelizable: false,
+      estimatedTimeSeconds: 0,
+      estimatedCostUSD: 0,
+    },
+    requiredInputs: [],
+    defaultValues: {},
+    warnings: [],
+  },
 };
 
 // ============================================================
@@ -724,10 +820,42 @@ export type PatternType =
   | "competitive_response"
   | "wargame"
   | "dynamics"
-  | "counterfactual";
+  | "counterfactual"
+  | "congressional_vote"
+  | "conversational";
 
 export function selectPattern(question: string): PatternType {
   const q = question.toLowerCase();
+
+  // Handle conversational/help queries first
+  // These should return a helpful message, not a default workflow
+  if (
+    q.includes("help") ||
+    q.includes("what can you do") ||
+    q.includes("what do you do") ||
+    (q.includes("can you") && !q.includes("customer") && !q.includes("consumer")) ||
+    (q.includes("do something") && !q.includes("would")) ||
+    q.includes("hello") ||
+    q.includes("hey") ||
+    q.includes("hi ") ||
+    q === "hi" ||
+    q.length < 10 // Very short queries are likely greetings
+  ) {
+    return "conversational";
+  }
+
+  // Check for congressional/political vote keywords
+  if (
+    q.includes("congress") ||
+    q.includes("senate") ||
+    q.includes("senator") ||
+    q.includes("house vote") ||
+    q.includes("legislation") ||
+    q.includes("tiktok ban") ||
+    (q.includes("vote") && (q.includes("bill") || q.includes("law")))
+  ) {
+    return "congressional_vote";
+  }
 
   // Check for competitive keywords
   if (
@@ -802,6 +930,8 @@ export const requiredPrimitivesByPattern: Record<PatternType, string[]> = {
   wargame: ["agent.create", "orchestrate.game_theory"],
   dynamics: ["population.sample", "orchestrate.abm"],
   counterfactual: ["population.sample", "branch.scenario", "orchestrate.monte_carlo", "branch.compare"],
+  congressional_vote: ["orchestrate.congressional_vote", "analyze.factors"],
+  conversational: [], // No required primitives for conversational pattern
 };
 
 // ============================================================

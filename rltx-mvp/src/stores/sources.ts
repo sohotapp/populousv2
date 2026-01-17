@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import type {
   ConnectorDefinition,
   SourceField,
@@ -22,60 +23,9 @@ export type {
 // This would be fetched from PyAirbyte in production, but we define common ones here
 
 export const CONNECTOR_CATALOG: ConnectorDefinition[] = [
-  // CRM
-  {
-    id: "salesforce",
-    name: "Salesforce",
-    icon: "☁️",
-    category: "crm",
-    description: "CRM & Sales Platform",
-    popularity: 5,
-    authType: "oauth",
-    configFields: [
-      { name: "client_id", label: "Client ID", type: "text", required: true },
-      { name: "client_secret", label: "Client Secret", type: "password", required: true },
-      { name: "refresh_token", label: "Refresh Token", type: "password", required: true },
-      { name: "instance_url", label: "Instance URL", type: "text", required: false, placeholder: "https://yourorg.salesforce.com" },
-    ],
-  },
-  {
-    id: "hubspot",
-    name: "HubSpot",
-    icon: "🟠",
-    category: "crm",
-    description: "Marketing & Sales CRM",
-    popularity: 5,
-    authType: "api_key",
-    configFields: [
-      { name: "api_key", label: "API Key", type: "password", required: true },
-    ],
-  },
-  {
-    id: "pipedrive",
-    name: "Pipedrive",
-    icon: "🟢",
-    category: "crm",
-    description: "Sales CRM",
-    popularity: 4,
-    authType: "api_key",
-    configFields: [
-      { name: "api_token", label: "API Token", type: "password", required: true },
-    ],
-  },
-  {
-    id: "zoho-crm",
-    name: "Zoho CRM",
-    icon: "🔴",
-    category: "crm",
-    description: "CRM Platform",
-    popularity: 4,
-    authType: "oauth",
-    configFields: [
-      { name: "client_id", label: "Client ID", type: "text", required: true },
-      { name: "client_secret", label: "Client Secret", type: "password", required: true },
-      { name: "refresh_token", label: "Refresh Token", type: "password", required: true },
-    ],
-  },
+  // NOTE: CRM/HRIS connectors are handled via Merge.dev (see DataConnectionWizard)
+  // This catalog is for databases, warehouses, and file sources only
+
   // Databases
   {
     id: "postgres",
@@ -463,7 +413,16 @@ interface SourcesState {
 
   // Actions
   fetchSources: () => Promise<void>;
-  createSource: (data: { name: string; connectorType: string; config: Record<string, string> }) => Promise<DataSource>;
+  createSource: (data: {
+    name: string;
+    connectorType: string;
+    config: Record<string, string>;
+    description?: string;
+    // Merge-specific fields
+    mergeLinkedAccountId?: string;
+    mergeCategory?: string;
+    recordCount?: number;
+  }) => Promise<DataSource>;
   deleteSource: (sourceId: string) => Promise<void>;
   testConnection: (sourceId: string) => Promise<{ success: boolean; error?: string }>;
 
@@ -487,7 +446,9 @@ interface SourcesState {
   resetWizard: () => void;
 }
 
-export const useSourcesStore = create<SourcesState>((set, get) => ({
+export const useSourcesStore = create<SourcesState>()(
+  persist(
+    (set, get) => ({
   // Initial state
   sources: [],
   schemas: {},
@@ -726,7 +687,16 @@ export const useSourcesStore = create<SourcesState>((set, get) => ({
       wizardConnector: null,
       wizardConfig: {},
     }),
-}));
+    }),
+    {
+      name: "rltx-sources-store",
+      partialize: (state) => ({
+        // Only persist sources data, not UI state
+        sources: state.sources,
+      }),
+    }
+  )
+);
 
 // ============ HELPER FUNCTIONS ============
 
@@ -739,8 +709,8 @@ export function getConnectorsByCategory(category: ConnectorDefinition["category"
 }
 
 export function getConnectorCategories(): { id: string; label: string; count: number }[] {
+  // NOTE: CRM/HRIS categories removed - those are handled via Merge.dev
   const categories = [
-    { id: "crm", label: "CRM" },
     { id: "database", label: "Database" },
     { id: "warehouse", label: "Data Warehouse" },
     { id: "files", label: "Files" },
@@ -750,10 +720,12 @@ export function getConnectorCategories(): { id: string; label: string; count: nu
     { id: "other", label: "Other" },
   ];
 
-  return categories.map((cat) => ({
-    ...cat,
-    count: CONNECTOR_CATALOG.filter((c) => c.category === cat.id).length,
-  }));
+  return categories
+    .map((cat) => ({
+      ...cat,
+      count: CONNECTOR_CATALOG.filter((c) => c.category === cat.id).length,
+    }))
+    .filter((cat) => cat.count > 0); // Only show categories with connectors
 }
 
 export function getStatusColor(status: DataSource["status"]): string {

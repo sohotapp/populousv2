@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronLeft,
-  ChevronRight,
   Loader2,
   SlidersHorizontal,
   PanelLeftClose,
@@ -20,17 +19,17 @@ import { Inspector } from "@/components/inspector/Inspector";
 import { ExecutionPanel } from "@/components/execution/ExecutionPanel";
 import { ResizeHandle } from "@/components/ui/ResizeHandle";
 import { useCanvasStore } from "@/stores/canvas";
-import { useExecutionStore } from "@/stores/execution";
+import { useWorkflow } from "@/hooks/useWorkflow";
 import { cn } from "@/lib/utils";
 
 // Sidebar width constraints
 const LEFT_SIDEBAR_MIN = 180;
 const LEFT_SIDEBAR_MAX = 400;
-const LEFT_SIDEBAR_DEFAULT = 208; // w-52 = 13rem = 208px
+const LEFT_SIDEBAR_DEFAULT = 208;
 
 const RIGHT_SIDEBAR_MIN = 280;
 const RIGHT_SIDEBAR_MAX = 500;
-const RIGHT_SIDEBAR_DEFAULT = 320; // w-80 = 20rem = 320px
+const RIGHT_SIDEBAR_DEFAULT = 320;
 
 interface Workflow {
   id: string;
@@ -53,52 +52,37 @@ export default function WorkflowPage({ params }: PageProps) {
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [loading, setLoading] = useState(true);
   const [rightPanel, setRightPanel] = useState<"chat" | "inspector" | "execution" | null>("chat");
-  const [isRunning, setIsRunning] = useState(false);
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(LEFT_SIDEBAR_DEFAULT);
   const [rightSidebarWidth, setRightSidebarWidth] = useState(RIGHT_SIDEBAR_DEFAULT);
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
 
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
   const nodes = useCanvasStore((s) => s.nodes);
-  const edges = useCanvasStore((s) => s.edges);
-  const startExecution = useCanvasStore((s) => s.startExecution);
-  const loadWorkflow = useCanvasStore((s) => s.loadWorkflow);
+  const loadWorkflowToCanvas = useCanvasStore((s) => s.loadWorkflow);
 
-  const { connect, joinExecution, executionStatus } = useExecutionStore();
-
-  // Connect to engine on mount
-  useEffect(() => {
-    connect();
-  }, [connect]);
+  // Use the new workflow hook for SSE-based execution
+  const {
+    execute,
+    cancelExecution,
+    isExecuting,
+    executionProgress,
+    loadWorkflow: loadComposedWorkflow,
+  } = useWorkflow();
 
   // Handle running the workflow
-  const handleRun = async () => {
+  const handleRun = useCallback(async () => {
     if (nodes.length === 0) return;
-
-    setIsRunning(true);
     setRightPanel("execution");
+    await execute();
+  }, [nodes.length, execute]);
 
-    try {
-      const res = await fetch("/api/executions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          workflowId: id,
-          graph: { nodes, edges },
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        startExecution(data.executionId);
-        joinExecution(data.executionId);
-      }
-    } catch (error) {
-      console.error("Failed to start execution:", error);
-    } finally {
-      setIsRunning(false);
-    }
-  };
+  // Handle reset
+  const handleReset = useCallback(() => {
+    // Reset node states
+    nodes.forEach((node) => {
+      useCanvasStore.getState().updateNodeState(node.id, "idle");
+    });
+  }, [nodes]);
 
   // Handle workflow generated from chat - load into canvas
   const handleWorkflowGenerated = useCallback((generatedWorkflow: {
@@ -109,12 +93,13 @@ export default function WorkflowPage({ params }: PageProps) {
     edges: unknown[];
   }) => {
     // Load the generated nodes and edges into the canvas
-    loadWorkflow(
-      generatedWorkflow.nodes as Parameters<typeof loadWorkflow>[0],
-      generatedWorkflow.edges as Parameters<typeof loadWorkflow>[1]
+    loadWorkflowToCanvas(
+      generatedWorkflow.nodes as Parameters<typeof loadWorkflowToCanvas>[0],
+      generatedWorkflow.edges as Parameters<typeof loadWorkflowToCanvas>[1]
     );
-  }, [loadWorkflow]);
+  }, [loadWorkflowToCanvas]);
 
+  // Fetch workflow on mount
   useEffect(() => {
     const fetchWorkflow = async () => {
       try {
@@ -143,6 +128,13 @@ export default function WorkflowPage({ params }: PageProps) {
     }
   }, [selectedNodeId]);
 
+  // Auto-show execution panel when execution starts
+  useEffect(() => {
+    if (executionProgress.status === "running") {
+      setRightPanel("execution");
+    }
+  }, [executionProgress.status]);
+
   // Sidebar resize handlers
   const handleLeftResize = useCallback((delta: number) => {
     setLeftSidebarWidth((prev) =>
@@ -170,7 +162,7 @@ export default function WorkflowPage({ params }: PageProps) {
 
   return (
     <div className="h-screen flex flex-col bg-[hsl(0,0%,7%)]">
-      {/* Header - Linear style */}
+      {/* Header */}
       <header className="h-11 flex items-center justify-between px-3 border-b border-[hsl(0,0%,12%)] flex-shrink-0 bg-[hsl(0,0%,7%)]">
         {/* Left: Navigation & Title */}
         <div className="flex items-center gap-1 min-w-0">
@@ -209,15 +201,15 @@ export default function WorkflowPage({ params }: PageProps) {
           {/* Run - Primary action */}
           <button
             onClick={handleRun}
-            disabled={isRunning || nodes.length === 0}
+            disabled={isExecuting || nodes.length === 0}
             className={cn(
               "h-7 px-3 rounded text-[12px] font-medium flex items-center gap-1.5 transition-colors duration-100",
-              isRunning || nodes.length === 0
+              isExecuting || nodes.length === 0
                 ? "bg-[hsl(0,0%,15%)] text-[hsl(0,0%,40%)] cursor-not-allowed"
                 : "bg-[hsl(0,0%,90%)] text-[hsl(0,0%,7%)] hover:bg-[hsl(0,0%,100%)]"
             )}
           >
-            {isRunning ? (
+            {isExecuting ? (
               <Loader2 className="w-3 h-3 animate-spin" />
             ) : (
               <Play className="w-3 h-3" />
@@ -235,7 +227,7 @@ export default function WorkflowPage({ params }: PageProps) {
               rightPanel === "execution"
                 ? "text-[hsl(0,0%,85%)] bg-[hsl(0,0%,12%)]"
                 : "text-[hsl(0,0%,45%)] hover:text-[hsl(0,0%,70%)] hover:bg-[hsl(0,0%,10%)]",
-              executionStatus === "running" && "text-[hsl(210,60%,60%)]"
+              executionProgress.status === "running" && "text-[hsl(210,60%,60%)]"
             )}
             title="Execution"
           >
@@ -302,6 +294,7 @@ export default function WorkflowPage({ params }: PageProps) {
               <ChatPanel
                 workflowId={workflow.id}
                 onWorkflowGenerated={handleWorkflowGenerated}
+                onRunSimulation={handleRun}
                 className="h-full"
               />
             )}
@@ -309,7 +302,13 @@ export default function WorkflowPage({ params }: PageProps) {
               <Inspector className="h-full" />
             )}
             {rightPanel === "execution" && (
-              <ExecutionPanel />
+              <ExecutionPanel
+                progress={executionProgress}
+                onCancel={cancelExecution}
+                onReset={handleReset}
+                onRun={handleRun}
+                isExecuting={isExecuting}
+              />
             )}
           </div>
         )}

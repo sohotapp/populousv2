@@ -2,27 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { workflows } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
-
-// Mock data for demo mode (no database)
-const mockWorkflows = [
-  {
-    id: "demo-workflow-1",
-    name: "Market Expansion Analysis",
-    question: "Should we expand into the European market?",
-    graph: { nodes: [], edges: [] },
-    status: "draft",
-    createdBy: "demo-user",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
+import {
+  getAllWorkflows,
+  createWorkflow as createMockWorkflow,
+} from "@/lib/mock-db";
 
 // GET /api/workflows - List all workflows
 export async function GET(request: NextRequest) {
   try {
     // Demo mode without database
     if (!db) {
-      return NextResponse.json(mockWorkflows);
+      return NextResponse.json(getAllWorkflows());
     }
 
     // In production, get user from auth
@@ -37,7 +27,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(userWorkflows);
   } catch (error) {
     console.error("Failed to fetch workflows:", error);
-    return NextResponse.json(mockWorkflows);
+    return NextResponse.json(getAllWorkflows());
   }
 }
 
@@ -45,7 +35,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, question } = body;
+    const { name, question, pattern, analysisDepth } = body;
 
     if (!name || !question) {
       return NextResponse.json(
@@ -56,16 +46,14 @@ export async function POST(request: NextRequest) {
 
     // Demo mode without database
     if (!db) {
-      const newWorkflow = {
-        id: `demo-${Date.now()}`,
+      const newWorkflow = createMockWorkflow({
         name,
         question,
         graph: { nodes: [], edges: [] },
         status: "draft",
-        createdBy: "demo-user",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+        pattern: pattern || "consumer_survey",
+        analysisDepth: analysisDepth || "standard",
+      });
       return NextResponse.json(newWorkflow);
     }
 

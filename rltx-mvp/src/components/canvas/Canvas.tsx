@@ -35,7 +35,7 @@ interface CanvasInnerProps {
 }
 
 function CanvasInner({ workflowId, initialGraph }: CanvasInnerProps) {
-  const { screenToFlowPosition, getViewport } = useReactFlow();
+  const { screenToFlowPosition, getViewport, fitView } = useReactFlow();
 
   const {
     nodes,
@@ -51,6 +51,8 @@ function CanvasInner({ workflowId, initialGraph }: CanvasInnerProps) {
     loadWorkflow,
     setZoomLevel,
     isValidConnection,
+    shouldFitView,
+    clearFitView,
     // Undo/Redo
     undo,
     redo,
@@ -77,6 +79,22 @@ function CanvasInner({ workflowId, initialGraph }: CanvasInnerProps) {
       loadWorkflow(initialGraph.nodes as Node[], initialGraph.edges);
     }
   }, [workflowId, initialGraph, setWorkflowId, loadWorkflow]);
+
+  // Auto-fit view when workflow is loaded
+  useEffect(() => {
+    if (shouldFitView && nodes.length > 0) {
+      // Small delay to ensure nodes are rendered
+      const timer = setTimeout(() => {
+        fitView({
+          padding: 0.2,
+          duration: 300,
+          maxZoom: 1.5,
+        });
+        clearFitView();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [shouldFitView, nodes.length, fitView, clearFitView]);
 
   // Get addPlaybook from store
   const addPlaybook = useCanvasStore((s) => s.addPlaybook);

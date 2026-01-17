@@ -6,7 +6,6 @@ import {
   Plus,
   RefreshCw,
   Trash2,
-  ChevronDown,
   FileText,
   Table,
   Braces,
@@ -24,12 +23,18 @@ import {
 import {
   useSourcesStore,
   type DataSource,
+  type ConnectorDefinition,
 } from "@/stores/sources";
 import { DataUploadModal } from "./DataUploadModal";
-import { AddSourceWizard } from "../sources/AddSourceWizard";
+import { DataSourceModal } from "./DataSourceModal";
+import { SourceConfigModal } from "../sources/SourceConfigModal";
 import { ConnectorLogo } from "../icons/ConnectorLogos";
+import type { MergeCategory } from "@/lib/merge/client";
 
-// Design tokens - Linear exact values (matches page.tsx)
+// =============================================================================
+// DESIGN TOKENS - DESIGN.md VERBATIM
+// =============================================================================
+
 const colors = {
   bgBase: "hsl(0, 0%, 7%)",
   bgElevated: "hsl(0, 0%, 9%)",
@@ -70,10 +75,13 @@ interface DataPanelProps {
 
 export function DataPanel({ onSelectDataset, selectable = false }: DataPanelProps) {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [isSourceModalOpen, setIsSourceModalOpen] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Database config modal state
+  const [selectedDbConnector, setSelectedDbConnector] = useState<ConnectorDefinition | null>(null);
 
   const {
     datasets,
@@ -88,15 +96,35 @@ export function DataPanel({ onSelectDataset, selectable = false }: DataPanelProp
     sources,
     isLoading: sourcesLoading,
     fetchSources,
+    createSource,
     deleteSource,
     syncSource,
   } = useSourcesStore();
 
+  // Only fetch if we don't have cached data - show cached immediately
   useEffect(() => {
-    fetchDatasets();
-    fetchSources();
+    // Fetch in parallel, but only if needed
+    const shouldFetchDatasets = datasets.length === 0;
+    const shouldFetchSources = sources.length === 0;
+
+    if (shouldFetchDatasets || shouldFetchSources) {
+      Promise.all([
+        shouldFetchDatasets ? fetchDatasets() : Promise.resolve(),
+        shouldFetchSources ? fetchSources() : Promise.resolve(),
+      ]);
+    }
+  }, []); // Only run once on mount
+
+  // Background refresh after initial render (stale-while-revalidate pattern)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchDatasets();
+      fetchSources();
+    }, 100); // Small delay to not block initial render
+    return () => clearTimeout(timer);
   }, [fetchDatasets, fetchSources]);
 
+  // Unified data list
   const unifiedData = useMemo((): UnifiedDataItem[] => {
     const items: UnifiedDataItem[] = [];
 
@@ -173,6 +201,55 @@ export function DataPanel({ onSelectDataset, selectable = false }: DataPanelProp
     }
   };
 
+  // Handle Merge connection complete
+  const handleMergeConnect = async (result: {
+    linkedAccountId: string;
+    integrationSlug: string;
+    integrationName: string;
+    category: MergeCategory;
+    agentCount: number;
+  }) => {
+    try {
+      await createSource({
+        name: result.integrationName,
+        connectorType: `merge-${result.integrationSlug}`,
+        config: {
+          linkedAccountId: result.linkedAccountId,
+          category: result.category,
+        },
+        mergeLinkedAccountId: result.linkedAccountId,
+        mergeCategory: result.category,
+        recordCount: result.agentCount,
+      });
+      await fetchSources();
+    } catch (error) {
+      console.error("Failed to create source:", error);
+    }
+    setIsSourceModalOpen(false);
+  };
+
+  // Handle database connector selection
+  const handleDatabaseConnect = (connector: ConnectorDefinition) => {
+    setSelectedDbConnector(connector);
+    setIsSourceModalOpen(false);
+  };
+
+  // Handle database config submit
+  const handleDbConfigSubmit = async (data: { name: string; config: Record<string, string> }) => {
+    if (!selectedDbConnector) return;
+    try {
+      await createSource({
+        name: data.name,
+        connectorType: selectedDbConnector.id,
+        config: data.config,
+      });
+      await fetchSources();
+      setSelectedDbConnector(null);
+    } catch (error) {
+      console.error("Failed to create source:", error);
+    }
+  };
+
   const formatTime = (isoString: string) => {
     const date = new Date(isoString);
     const now = new Date();
@@ -196,7 +273,7 @@ export function DataPanel({ onSelectDataset, selectable = false }: DataPanelProp
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header - matches main page header exactly */}
+      {/* Header - DESIGN.md: 13px font, minimal chrome */}
       <header
         className="h-12 flex items-center justify-between px-6 flex-shrink-0"
         style={{ borderBottom: `1px solid ${colors.borderSubtle}` }}
@@ -213,7 +290,7 @@ export function DataPanel({ onSelectDataset, selectable = false }: DataPanelProp
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Search - matches main page style exactly */}
+          {/* Search */}
           <div className="relative">
             <Search
               className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5"
@@ -234,7 +311,7 @@ export function DataPanel({ onSelectDataset, selectable = false }: DataPanelProp
             />
           </div>
 
-          {/* Add dropdown - matches main page button style */}
+          {/* Add dropdown */}
           <div className="relative">
             <button
               onClick={() => setShowAddMenu(!showAddMenu)}
@@ -277,7 +354,7 @@ export function DataPanel({ onSelectDataset, selectable = false }: DataPanelProp
                     Upload file
                   </button>
                   <button
-                    onClick={() => { setShowAddMenu(false); setIsWizardOpen(true); }}
+                    onClick={() => { setShowAddMenu(false); setIsSourceModalOpen(true); }}
                     className="flex items-center gap-2.5 w-full px-3 py-2 text-[13px] transition-colors text-left"
                     style={{ color: colors.textSecondary }}
                     onMouseEnter={(e) => { e.currentTarget.style.background = colors.bgHover; }}
@@ -303,7 +380,7 @@ export function DataPanel({ onSelectDataset, selectable = false }: DataPanelProp
           <EmptyState
             hasSearch={searchQuery.length > 0}
             onUpload={() => setIsUploadOpen(true)}
-            onConnect={() => setIsWizardOpen(true)}
+            onConnect={() => setIsSourceModalOpen(true)}
           />
         ) : (
           <div className="py-1">
@@ -328,10 +405,29 @@ export function DataPanel({ onSelectDataset, selectable = false }: DataPanelProp
 
       {/* Modals */}
       <DataUploadModal isOpen={isUploadOpen} onClose={() => setIsUploadOpen(false)} />
-      <AddSourceWizard isOpen={isWizardOpen} onClose={() => setIsWizardOpen(false)} onComplete={() => fetchSources()} />
+
+      <DataSourceModal
+        isOpen={isSourceModalOpen}
+        onClose={() => setIsSourceModalOpen(false)}
+        onMergeConnect={handleMergeConnect}
+        onDatabaseConnect={handleDatabaseConnect}
+      />
+
+      {selectedDbConnector && (
+        <SourceConfigModal
+          connector={selectedDbConnector}
+          isOpen={true}
+          onClose={() => setSelectedDbConnector(null)}
+          onSubmit={handleDbConfigSubmit}
+        />
+      )}
     </div>
   );
 }
+
+// =============================================================================
+// EMPTY STATE - DESIGN.md Pattern
+// =============================================================================
 
 function EmptyState({
   hasSearch,
@@ -395,6 +491,10 @@ function EmptyState({
   );
 }
 
+// =============================================================================
+// DATA ROW - DESIGN.md Hover Reveals Pattern
+// =============================================================================
+
 function DataRow({
   item,
   isSelected,
@@ -430,7 +530,9 @@ function DataRow({
           return <FileText className="w-4 h-4" style={{ color: colors.iconSecondary }} />;
       }
     }
-    return <ConnectorLogo connectorId={item.origin} className="w-4 h-4" />;
+    // For sources, extract the base connector ID (remove "merge-" prefix if present)
+    const connectorId = item.origin.replace("merge-", "");
+    return <ConnectorLogo connectorId={connectorId} className="w-4 h-4" />;
   };
 
   return (
@@ -444,17 +546,15 @@ function DataRow({
       {/* Icon */}
       {getIcon()}
 
-      {/* Name and metadata */}
+      {/* Name and metadata - DESIGN.md typography */}
       <div className="flex-1 min-w-0 flex items-center gap-2">
         <span className="text-[13px] truncate" style={{ color: colors.textPrimary }}>
           {item.name}
         </span>
-        <span className="text-[12px] flex-shrink-0" style={{ color: colors.textQuaternary }}>•</span>
-        <span className="text-[12px] flex-shrink-0" style={{ color: colors.textTertiary }}>
+        <span className="text-[11px] flex-shrink-0" style={{ color: colors.textQuaternary }}>
           {formatCount(item.recordCount)}
         </span>
-        <span className="text-[12px] flex-shrink-0" style={{ color: colors.textQuaternary }}>•</span>
-        <span className="text-[12px] flex-shrink-0" style={{ color: colors.textTertiary }}>
+        <span className="text-[11px] flex-shrink-0" style={{ color: colors.textQuaternary }}>
           {formatTime(item.lastUpdated)}
         </span>
         {item.status === "syncing" && (
@@ -465,7 +565,7 @@ function DataRow({
         )}
       </div>
 
-      {/* Actions - hover only */}
+      {/* Actions - hover reveal per DESIGN.md */}
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         {item.type === "source" && (
           <button
