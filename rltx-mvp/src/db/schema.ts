@@ -798,3 +798,175 @@ export interface FundingRound {
   investors: string[];
   valuation?: number;
 }
+
+// ============ SIMULATION RUNS (Persistent Store) ============
+
+/**
+ * Simulation Runs - Persisted record of every simulation execution
+ * Replaces the in-memory Map<> store for production reliability
+ */
+export const simulationRuns = pgTable("simulation_runs", {
+  id: text("id").primaryKey(), // e.g., "sim_abc123"
+  status: text("status").notNull().default("running"), // 'running', 'completed', 'failed'
+  
+  // Configuration (the input to the simulation)
+  config: jsonb("config").notNull().$type<SimulationRunConfig>(),
+  
+  // Result (populated on completion)
+  result: jsonb("result").$type<SimulationRunResult>(),
+  
+  // Error details (populated on failure)
+  error: text("error"),
+  
+  // Audit reference
+  auditId: text("audit_id").notNull(),
+  
+  // User/session tracking
+  userId: text("user_id"), // Clerk user ID if authenticated
+  sessionId: text("session_id"),
+  
+  // Timing
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+/**
+ * Simulation Audits - Detailed audit trail for reproducibility and compliance
+ * Links to simulation_runs via auditId
+ */
+export const simulationAudits = pgTable("simulation_audits", {
+  id: text("id").primaryKey(), // e.g., "audit_xyz789"
+  runId: text("run_id").references(() => simulationRuns.id),
+  
+  // Request details
+  requestConfig: jsonb("request_config").notNull().$type<SimulationRunConfig>(),
+  requestIp: text("request_ip"),
+  requestUserAgent: text("request_user_agent"),
+  
+  // Response summary (populated on completion)
+  responseSummary: jsonb("response_summary").$type<SimulationAuditResponse>(),
+  
+  // Error details (populated on failure)
+  error: text("error"),
+  
+  // Metadata for reproducibility
+  modelVersions: jsonb("model_versions").$type<Record<string, string>>(),
+  dataVersions: jsonb("data_versions").$type<Record<string, string>>(),
+  configHash: text("config_hash"), // SHA256 of config for deduplication
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ============ SIMULATION RUN TYPES ============
+
+export interface SimulationRunConfig {
+  id?: string;
+  query: string;
+  scenario?: string;
+  question?: string;
+  questionType?: "binary" | "scale" | "choice" | "open" | "numeric";
+  options?: string[];
+  world?: {
+    hypotheticalEvents?: string[];
+    marketConditions?: {
+      economy: "growth" | "stable" | "recession";
+      sentiment: "bullish" | "neutral" | "bearish";
+      volatility: "low" | "medium" | "high";
+    };
+    timeHorizon?: string;
+  };
+  population?: {
+    mode: "vip" | "archetype" | "population";
+    sampleSize: number;
+    useArchetypes?: boolean;
+    archetypeCount?: number;
+    filters?: Record<string, string[]>;
+    vipIds?: string[];
+  };
+  psychographics?: {
+    bigFive?: Record<string, number>;
+    values?: Record<string, number>;
+    biases?: Record<string, number>;
+    traits?: Record<string, number>;
+  };
+  agents?: {
+    biases?: Record<string, number>;
+    interactionMode?: string;
+  };
+  execution?: {
+    pilotMode?: boolean;
+    pilotSize?: number;
+    confidenceTarget?: number;
+    maxConcurrency?: number;
+    timeout?: number;
+  };
+  counterfactuals?: Array<{
+    id: string;
+    label: string;
+    worldModification?: Record<string, unknown>;
+  }>;
+}
+
+export interface SimulationRunResult {
+  id: string;
+  query: string;
+  timestamp: string;
+  auditId?: string;
+  summary: {
+    primaryMetric: number;
+    primaryMetricLabel: string;
+    confidenceInterval: { lower: number; upper: number };
+    sampleSize: number;
+    effectiveSampleSize: number;
+    executionTimeMs: number;
+  };
+  distribution: {
+    type: string;
+    values: Array<{ label: string; value: number }>;
+    raw?: Record<string, number>;
+  };
+  segments: Array<{
+    name: string;
+    filters: Record<string, string>;
+    value: number;
+    count: number;
+    delta: number;
+    significance: boolean;
+  }>;
+  drivers: Array<{
+    factor: string;
+    importance: number;
+    direction: "positive" | "negative";
+    effect: number;
+  }>;
+  counterfactuals: Array<{
+    id: string;
+    label: string;
+    outcome: number;
+    delta: number;
+    significance: boolean;
+  }>;
+  accuracy: {
+    ssrCalibration: number;
+    sampleQuality: number;
+    responseQuality: number;
+    diversityIndex: number;
+  };
+  metadata: {
+    populationId: string;
+    agentsGenerated: number;
+    agentsExecuted: number;
+    archetypesUsed: boolean;
+    modelTierDistribution: Record<string, number>;
+    avgLatencyMs: number;
+  };
+}
+
+export interface SimulationAuditResponse {
+  summary: SimulationRunResult["summary"];
+  metadata?: SimulationRunResult["metadata"];
+}

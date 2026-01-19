@@ -617,17 +617,34 @@ export function SimulationView() {
     personality: false,
     values: false,
     world: false,
+    counterfactuals: false,
     dataSources: false,
     agents: false,
     run: false,
   });
-  const [activeTab, setActiveTab] = useState<"summary" | "distribution" | "segments" | "drivers" | "counterfactuals" | "sensitivity">("summary");
+  const [activeTab, setActiveTab] = useState<"summary" | "distribution" | "segments" | "drivers" | "counterfactuals" | "sensitivity" | "history">("summary");
+  const [runHistory, setRunHistory] = useState<Array<{
+    id: string;
+    status: string;
+    createdAt: string;
+    query: string;
+    summary?: {
+      primaryMetric: number;
+      primaryMetricLabel: string;
+      sampleSize: number;
+      executionTimeMs?: number;
+    };
+    error?: string;
+  }>>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<SimulationResult | null>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [isExporting, setIsExporting] = useState<string | null>(null);
   const [scenarioInput, setScenarioInput] = useState("");
   const [eventInput, setEventInput] = useState("");
+  const [counterfactualInput, setCounterfactualInput] = useState("");
+  const [counterfactuals, setCounterfactuals] = useState<Array<{ id: string; label: string; event: string }>>([]);
 
   // Panel resize
   const [leftPanelWidth, setLeftPanelWidth] = useState(35);
@@ -787,6 +804,7 @@ export function SimulationView() {
             pilotMode: config.run.pilotMode,
             confidenceLevel: config.run.confidence,
           },
+          counterfactuals: counterfactuals.length > 0 ? counterfactuals : undefined,
         }),
       });
 
@@ -890,6 +908,49 @@ export function SimulationView() {
       console.error("Export error:", error);
     } finally {
       setIsExporting(null);
+    }
+  };
+
+  // Fetch run history
+  const fetchHistory = useCallback(async () => {
+    setLoadingHistory(true);
+    try {
+      const response = await fetch("/api/simulation/history?limit=20");
+      if (response.ok) {
+        const data = await response.json();
+        setRunHistory(data.runs || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch history:", error);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, []);
+
+  // Load a historical run result
+  const loadHistoricalRun = async (runId: string) => {
+    try {
+      const response = await fetch(`/api/simulation/run/${runId}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.result) {
+          setResult(data.result);
+          setScenarioInput(data.config?.query || data.result.query || "");
+          setActiveTab("summary");
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load run:", error);
+    }
+  };
+
+  // Re-run a historical simulation with same config
+  const rerunSimulation = async (runId: string) => {
+    const historicalRun = runHistory.find((r) => r.id === runId);
+    if (historicalRun) {
+      setScenarioInput(historicalRun.query);
+      // Trigger the run after setting the scenario
+      setTimeout(() => handleRunSimulation(), 100);
     }
   };
 
@@ -1524,6 +1585,162 @@ export function SimulationView() {
             </div>
           </ConfigSection>
 
+          {/* Counterfactual Scenarios */}
+          <ConfigSection
+            title="Counterfactual Scenarios"
+            icon={GitBranch}
+            expanded={expandedSections.counterfactuals}
+            onToggle={() => toggleSection("counterfactuals")}
+            badge={counterfactuals.length > 0 ? `${counterfactuals.length} scenarios` : undefined}
+          >
+            <div className="space-y-4">
+              <p className="text-[11px]" style={{ color: colors.textTertiary }}>
+                Define alternative scenarios to compare against the baseline. Each scenario modifies the world state.
+              </p>
+
+              {/* Add new counterfactual */}
+              <div>
+                <label className="text-[11px] uppercase mb-1.5 block" style={{ color: colors.textQuaternary }}>
+                  Add Scenario
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={counterfactualInput}
+                    onChange={(e) => setCounterfactualInput(e.target.value)}
+                    placeholder="What if competitor drops price 30%..."
+                    className="flex-1 h-8 px-3 text-[12px] rounded outline-none"
+                    style={{
+                      background: colors.bgSurface,
+                      border: `1px solid ${colors.borderDefault}`,
+                      color: colors.textPrimary,
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && counterfactualInput.trim()) {
+                        const newCf = {
+                          id: `cf_${Date.now()}`,
+                          label: counterfactualInput.trim().slice(0, 50),
+                          event: counterfactualInput.trim(),
+                        };
+                        setCounterfactuals((prev) => [...prev, newCf]);
+                        setCounterfactualInput("");
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      if (counterfactualInput.trim()) {
+                        const newCf = {
+                          id: `cf_${Date.now()}`,
+                          label: counterfactualInput.trim().slice(0, 50),
+                          event: counterfactualInput.trim(),
+                        };
+                        setCounterfactuals((prev) => [...prev, newCf]);
+                        setCounterfactualInput("");
+                      }
+                    }}
+                    className="w-8 h-8 flex items-center justify-center rounded"
+                    style={{ background: colors.bgSurface, border: `1px solid ${colors.borderDefault}` }}
+                  >
+                    <Plus className="w-4 h-4" style={{ color: colors.iconSecondary }} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick presets */}
+              <div>
+                <label className="text-[11px] uppercase mb-1.5 block" style={{ color: colors.textQuaternary }}>
+                  Quick Presets
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { label: "Price +10%", event: "Price increases by 10%" },
+                    { label: "Price -10%", event: "Price decreases by 10%" },
+                    { label: "Competitor enters", event: "Major competitor enters the market" },
+                    { label: "Recession", event: "Economic recession begins" },
+                    { label: "New feature", event: "New premium feature is added" },
+                  ].map((preset) => (
+                    <button
+                      key={preset.label}
+                      onClick={() => {
+                        const exists = counterfactuals.some((cf) => cf.event === preset.event);
+                        if (!exists) {
+                          setCounterfactuals((prev) => [
+                            ...prev,
+                            { id: `cf_${Date.now()}`, label: preset.label, event: preset.event },
+                          ]);
+                        }
+                      }}
+                      className="px-2 py-1 text-[10px] rounded transition-colors"
+                      style={{
+                        background: counterfactuals.some((cf) => cf.event === preset.event)
+                          ? colors.statusInfo
+                          : colors.bgSurface,
+                        color: counterfactuals.some((cf) => cf.event === preset.event)
+                          ? "white"
+                          : colors.textSecondary,
+                        border: `1px solid ${
+                          counterfactuals.some((cf) => cf.event === preset.event)
+                            ? colors.statusInfo
+                            : colors.borderDefault
+                        }`,
+                      }}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* List of counterfactuals */}
+              {counterfactuals.length > 0 && (
+                <div className="space-y-2">
+                  <label className="text-[11px] uppercase block" style={{ color: colors.textQuaternary }}>
+                    Active Scenarios ({counterfactuals.length}/10)
+                  </label>
+                  {counterfactuals.map((cf, i) => (
+                    <div
+                      key={cf.id}
+                      className="flex items-center gap-2 px-3 py-2 rounded"
+                      style={{ background: colors.bgSurface, border: `1px solid ${colors.borderSubtle}` }}
+                    >
+                      <GitBranch className="w-3.5 h-3.5 flex-shrink-0" style={{ color: colors.statusInfo }} />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[12px] font-medium truncate" style={{ color: colors.textPrimary }}>
+                          Scenario {i + 1}: {cf.label}
+                        </div>
+                        <div className="text-[10px] truncate" style={{ color: colors.textTertiary }}>
+                          {cf.event}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setCounterfactuals((prev) => prev.filter((c) => c.id !== cf.id))}
+                        className="p-1 rounded hover:bg-white/5"
+                      >
+                        <X className="w-3.5 h-3.5" style={{ color: colors.textQuaternary }} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {counterfactuals.length === 0 && (
+                <div
+                  className="p-4 rounded-lg text-center"
+                  style={{ background: colors.bgSurface, border: `1px dashed ${colors.borderDefault}` }}
+                >
+                  <GitBranch className="w-6 h-6 mx-auto mb-2" style={{ color: colors.iconSecondary }} />
+                  <p className="text-[12px]" style={{ color: colors.textTertiary }}>
+                    No counterfactual scenarios defined.
+                  </p>
+                  <p className="text-[11px]" style={{ color: colors.textQuaternary }}>
+                    Add scenarios to compare &quot;what-if&quot; outcomes.
+                  </p>
+                </div>
+              )}
+            </div>
+          </ConfigSection>
+
           {/* Data Sources */}
           <ConfigSection
             title="Data Sources"
@@ -1855,10 +2072,15 @@ export function SimulationView() {
               style={{ borderBottom: `1px solid ${colors.borderSubtle}` }}
             >
               <div className="flex items-center gap-1">
-                {(["summary", "distribution", "segments", "drivers", "counterfactuals", "sensitivity"] as const).map((tab) => (
+                {(["summary", "distribution", "segments", "drivers", "counterfactuals", "sensitivity", "history"] as const).map((tab) => (
                   <button
                     key={tab}
-                    onClick={() => setActiveTab(tab)}
+                    onClick={() => {
+                      setActiveTab(tab);
+                      if (tab === "history") {
+                        fetchHistory();
+                      }
+                    }}
                     className="px-3 py-1.5 text-[12px] rounded transition-colors capitalize"
                     style={{
                       background: activeTab === tab ? colors.bgActive : "transparent",
@@ -2260,6 +2482,134 @@ export function SimulationView() {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {activeTab === "history" && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-[13px] font-medium" style={{ color: colors.textPrimary }}>
+                      Run History
+                    </h3>
+                    <button
+                      onClick={fetchHistory}
+                      disabled={loadingHistory}
+                      className="px-3 py-1.5 text-[11px] rounded flex items-center gap-1.5"
+                      style={{ background: colors.bgSurface, color: colors.textSecondary, border: `1px solid ${colors.borderDefault}` }}
+                    >
+                      {loadingHistory ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Clock className="w-3 h-3" />
+                      )}
+                      Refresh
+                    </button>
+                  </div>
+
+                  {loadingHistory ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="w-6 h-6 animate-spin" style={{ color: colors.iconSecondary }} />
+                    </div>
+                  ) : runHistory.length === 0 ? (
+                    <div
+                      className="p-6 rounded-lg text-center"
+                      style={{ background: colors.bgSurface, border: `1px dashed ${colors.borderDefault}` }}
+                    >
+                      <Clock className="w-8 h-8 mx-auto mb-3" style={{ color: colors.iconSecondary }} />
+                      <p className="text-[13px] mb-1" style={{ color: colors.textSecondary }}>
+                        No simulation history yet
+                      </p>
+                      <p className="text-[11px]" style={{ color: colors.textTertiary }}>
+                        Run a simulation to see it here
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {runHistory.map((run) => (
+                        <div
+                          key={run.id}
+                          className="p-4 rounded-lg transition-colors hover:bg-white/[0.02]"
+                          style={{ background: colors.bgSurface, border: `1px solid ${colors.borderSubtle}` }}
+                        >
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span
+                                  className="px-1.5 py-0.5 text-[10px] rounded"
+                                  style={{
+                                    background:
+                                      run.status === "completed"
+                                        ? colors.statusSuccess + "20"
+                                        : run.status === "failed"
+                                          ? colors.statusError + "20"
+                                          : colors.statusWarning + "20",
+                                    color:
+                                      run.status === "completed"
+                                        ? colors.statusSuccess
+                                        : run.status === "failed"
+                                          ? colors.statusError
+                                          : colors.statusWarning,
+                                  }}
+                                >
+                                  {run.status}
+                                </span>
+                                <span className="text-[10px]" style={{ color: colors.textQuaternary }}>
+                                  {new Date(run.createdAt).toLocaleString()}
+                                </span>
+                              </div>
+                              <p className="text-[12px] truncate" style={{ color: colors.textPrimary }}>
+                                {run.query}
+                              </p>
+                            </div>
+                            {run.summary && (
+                              <div className="text-right ml-4">
+                                <div className="text-[16px] font-semibold" style={{ color: colors.statusInfo }}>
+                                  {Math.round(run.summary.primaryMetric * 100)}%
+                                </div>
+                                <div className="text-[10px]" style={{ color: colors.textTertiary }}>
+                                  {run.summary.primaryMetricLabel}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {run.error && (
+                            <div
+                              className="px-2 py-1.5 rounded text-[11px] mb-2"
+                              style={{ background: colors.statusError + "15", color: colors.statusError }}
+                            >
+                              <AlertCircle className="w-3 h-3 inline mr-1" />
+                              {run.error}
+                            </div>
+                          )}
+
+                          <div className="flex items-center gap-2 mt-3">
+                            {run.status === "completed" && (
+                              <button
+                                onClick={() => loadHistoricalRun(run.id)}
+                                className="px-2.5 py-1 text-[11px] rounded flex items-center gap-1"
+                                style={{ background: colors.bgActive, color: colors.textSecondary }}
+                              >
+                                <BarChart2 className="w-3 h-3" />
+                                View Results
+                              </button>
+                            )}
+                            <button
+                              onClick={() => rerunSimulation(run.id)}
+                              className="px-2.5 py-1 text-[11px] rounded flex items-center gap-1"
+                              style={{ background: colors.bgActive, color: colors.textSecondary }}
+                            >
+                              <Play className="w-3 h-3" />
+                              Re-run
+                            </button>
+                            <span className="text-[10px] ml-auto" style={{ color: colors.textQuaternary }}>
+                              ID: {run.id.slice(0, 12)}...
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

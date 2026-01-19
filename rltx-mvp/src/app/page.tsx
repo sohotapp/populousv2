@@ -43,8 +43,13 @@ import {
   Eye,
   EyeOff,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Download,
   Keyboard,
+  Boxes,
+  PanelLeftClose,
+  PanelLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +57,7 @@ import { cn } from "@/lib/utils";
 import { RLTXIcon } from "@/components/ui/RLTXIcon";
 import { NewWorkflowModal } from "@/components/workflow/NewWorkflowModal";
 import { DataPanel } from "@/components/data/DataPanel";
+import { SimulationView } from "@/components/simulation/SimulationView";
 import {
   useInboxStore,
   groupNotificationsByDate,
@@ -110,7 +116,7 @@ interface WorkflowItem {
   archived?: boolean;
 }
 
-type ViewFilter = "all" | "starred" | "inbox" | "analytics" | "archive" | "data" | "settings";
+type ViewFilter = "all" | "starred" | "inbox" | "analytics" | "archive" | "data" | "settings" | "simulation";
 
 export default function HomePage() {
   const router = useRouter();
@@ -134,14 +140,18 @@ export default function HomePage() {
   const [commandQuery, setCommandQuery] = useState("");
   const commandInputRef = useRef<HTMLInputElement>(null);
 
+  // Sidebar collapse state - Linear style
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
   // Inbox store
   const { notifications, unreadCount, markAsRead, markAllAsRead, deleteNotification } = useInboxStore();
   const inboxUnreadCount = unreadCount();
 
-  // Load starred and archived IDs from localStorage
+  // Load starred, archived IDs, and sidebar state from localStorage
   useEffect(() => {
     const savedStarred = localStorage.getItem("rltx-starred-workflows");
     const savedArchived = localStorage.getItem("rltx-archived-workflows");
+    const savedSidebarCollapsed = localStorage.getItem("rltx-sidebar-collapsed");
     if (savedStarred) {
       try {
         setStarredIds(new Set(JSON.parse(savedStarred)));
@@ -152,7 +162,19 @@ export default function HomePage() {
         setArchivedIds(new Set(JSON.parse(savedArchived)));
       } catch {}
     }
+    if (savedSidebarCollapsed) {
+      setSidebarCollapsed(savedSidebarCollapsed === "true");
+    }
   }, []);
+
+  // Persist sidebar state
+  const toggleSidebar = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("rltx-sidebar-collapsed", String(next));
+      return next;
+    });
+  };
 
   // Close context menu on click outside
   useEffect(() => {
@@ -220,11 +242,16 @@ export default function HomePage() {
         return;
       }
 
-      // Don't handle navigation when in input or modal
+      // Don't handle navigation when in input, textarea, or modal
+      const activeTag = document.activeElement?.tagName;
+      const isEditable = document.activeElement instanceof HTMLElement &&
+        document.activeElement.isContentEditable;
       if (
         showCreate ||
         showCommandPalette ||
-        document.activeElement?.tagName === "INPUT"
+        activeTag === "INPUT" ||
+        activeTag === "TEXTAREA" ||
+        isEditable
       ) {
         return;
       }
@@ -387,13 +414,14 @@ export default function HomePage() {
   const archivedCount = workflows.filter((w) => archivedIds.has(w.id)).length;
 
   const viewTitles: Record<ViewFilter, string> = {
-    all: "Workflows",
+    all: "Strategic Simulations",
     starred: "Starred",
     inbox: "Inbox",
     analytics: "Analytics",
     archive: "Archive",
     data: "Data Library",
     settings: "Settings",
+    simulation: "Multiagent Simulation",
   };
 
   // Command palette items
@@ -403,6 +431,7 @@ export default function HomePage() {
       { id: "home", label: "Go to Home", shortcut: "G H", action: () => setActiveView("all") },
       { id: "starred", label: "Go to Starred", shortcut: "G S", action: () => setActiveView("starred") },
       { id: "analytics", label: "Go to Analytics", shortcut: "G A", action: () => setActiveView("analytics") },
+      { id: "simulation", label: "Multiagent Simulation", shortcut: "G M", action: () => setActiveView("simulation") },
       ...workflows.slice(0, 5).map((w) => ({
         id: w.id,
         label: w.name,
@@ -421,33 +450,81 @@ export default function HomePage() {
 
   return (
     <div className="h-screen flex" style={{ background: colors.bgBase }}>
-      {/* Sidebar */}
+      {/* Sidebar - Linear-style collapsible */}
       <aside
-        className="w-56 flex-shrink-0 flex flex-col"
-        style={{ borderRight: `1px solid ${colors.borderSubtle}` }}
+        className="flex-shrink-0 flex flex-col transition-all duration-200 ease-out"
+        style={{
+          width: sidebarCollapsed ? "52px" : "224px",
+          borderRight: `1px solid ${colors.borderSubtle}`
+        }}
       >
-        {/* Logo */}
+        {/* Logo + Toggle */}
         <div
-          className="h-14 flex items-center px-4"
-          style={{ borderBottom: `1px solid ${colors.borderSubtle}` }}
+          className={cn(
+            "h-14 flex items-center",
+            sidebarCollapsed ? "justify-center" : "justify-between"
+          )}
+          style={{
+            borderBottom: `1px solid ${colors.borderSubtle}`,
+            padding: sidebarCollapsed ? "0" : "0 16px",
+          }}
         >
-          <div className="flex items-center gap-2">
-            <span style={{ color: colors.textPrimary }}><RLTXIcon className="w-6 h-6" /></span>
-            <div className="flex items-baseline gap-1">
-              <span
-                className="font-semibold text-[13px] tracking-tight"
-                style={{ color: colors.textPrimary }}
+          {sidebarCollapsed ? (
+            /* Collapsed: Logo only, clickable to expand */
+            <button
+              onClick={toggleSidebar}
+              className="w-full h-full flex items-center justify-center transition-colors"
+              style={{ color: colors.textPrimary }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = colors.bgSurface;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+              }}
+              title="Expand sidebar"
+            >
+              <RLTXIcon className="w-6 h-6" />
+            </button>
+          ) : (
+            /* Expanded: Logo + text + toggle */
+            <>
+              <div className="flex items-center gap-2">
+                <span style={{ color: colors.textPrimary }}>
+                  <RLTXIcon className="w-6 h-6" />
+                </span>
+                <div className="flex items-baseline gap-1">
+                  <span
+                    className="font-semibold text-[13px] tracking-tight"
+                    style={{ color: colors.textPrimary }}
+                  >
+                    rltx
+                  </span>
+                  <span
+                    className="font-normal text-[13px] tracking-wide"
+                    style={{ color: colors.textSecondary }}
+                  >
+                    populous
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={toggleSidebar}
+                className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded transition-colors"
+                style={{ color: colors.iconSecondary }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = colors.bgHover;
+                  e.currentTarget.style.color = colors.iconPrimary;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                  e.currentTarget.style.color = colors.iconSecondary;
+                }}
+                title="Collapse sidebar"
               >
-                rltx
-              </span>
-              <span
-                className="font-normal text-[13px] tracking-wide"
-                style={{ color: colors.textSecondary }}
-              >
-                populous
-              </span>
-            </div>
-          </div>
+                <PanelLeftClose className="w-4 h-4" />
+              </button>
+            </>
+          )}
         </div>
 
         {/* Navigation - DESIGN.md sidebar styling */}
@@ -457,6 +534,14 @@ export default function HomePage() {
             label="Home"
             active={activeView === "all"}
             onClick={() => setActiveView("all")}
+            collapsed={sidebarCollapsed}
+          />
+          <SidebarItem
+            icon={Boxes}
+            label="Multiagent Simulation"
+            active={activeView === "simulation"}
+            onClick={() => setActiveView("simulation")}
+            collapsed={sidebarCollapsed}
           />
           <SidebarItem
             icon={Inbox}
@@ -464,6 +549,7 @@ export default function HomePage() {
             active={activeView === "inbox"}
             count={inboxUnreadCount > 0 ? inboxUnreadCount : undefined}
             onClick={() => setActiveView("inbox")}
+            collapsed={sidebarCollapsed}
           />
           <SidebarItem
             icon={Star}
@@ -471,18 +557,21 @@ export default function HomePage() {
             active={activeView === "starred"}
             count={starredCount > 0 ? starredCount : undefined}
             onClick={() => setActiveView("starred")}
+            collapsed={sidebarCollapsed}
           />
           <SidebarItem
             icon={Database}
             label="Data"
             active={activeView === "data"}
             onClick={() => setActiveView("data")}
+            collapsed={sidebarCollapsed}
           />
           <SidebarItem
             icon={BarChart2}
             label="Analytics"
             active={activeView === "analytics"}
             onClick={() => setActiveView("analytics")}
+            collapsed={sidebarCollapsed}
           />
           <SidebarItem
             icon={Archive}
@@ -490,18 +579,21 @@ export default function HomePage() {
             active={activeView === "archive"}
             count={archivedCount > 0 ? archivedCount : undefined}
             onClick={() => setActiveView("archive")}
+            collapsed={sidebarCollapsed}
           />
 
-          <div className="pt-4 pb-2">
-            <span
-              className="px-2 text-[11px] font-medium uppercase"
-              style={{ color: colors.textQuaternary, letterSpacing: "0.02em" }}
-            >
-              Workflows
-            </span>
-          </div>
+          {!sidebarCollapsed && (
+            <div className="pt-4 pb-2">
+              <span
+                className="px-2 text-[11px] font-medium uppercase"
+                style={{ color: colors.textQuaternary, letterSpacing: "0.02em" }}
+              >
+                Simulations
+              </span>
+            </div>
+          )}
 
-          {workflows
+          {!sidebarCollapsed && workflows
             .filter((w) => !archivedIds.has(w.id))
             .slice(0, 5)
             .map((w) => (
@@ -510,6 +602,7 @@ export default function HomePage() {
                 icon={FileText}
                 label={w.name}
                 onClick={() => router.push(`/workflow/${w.id}`)}
+                collapsed={sidebarCollapsed}
               />
             ))}
         </nav>
@@ -518,9 +611,12 @@ export default function HomePage() {
         <div className="p-2 space-y-0.5" style={{ borderTop: `1px solid ${colors.borderSubtle}` }}>
           <button
             onClick={() => setShowCommandPalette(true)}
-            className="w-full flex items-center gap-2 rounded transition-colors"
+            className={cn(
+              "w-full flex items-center rounded transition-colors",
+              sidebarCollapsed ? "justify-center" : "gap-2"
+            )}
             style={{
-              padding: "6px 8px",
+              padding: sidebarCollapsed ? "6px" : "6px 8px",
               color: colors.textTertiary,
             }}
             onMouseEnter={(e) => {
@@ -531,17 +627,28 @@ export default function HomePage() {
               e.currentTarget.style.background = "transparent";
               e.currentTarget.style.color = colors.textTertiary;
             }}
+            title={sidebarCollapsed ? "Search (⌘K)" : undefined}
           >
-            <Search className="w-4 h-4" style={{ color: colors.iconSecondary }} />
-            <span className="flex-1 text-left text-[13px]">Search</span>
-            <kbd
-              className="text-[11px] px-1.5 py-0.5 rounded"
-              style={{ background: colors.bgHover, color: colors.textQuaternary, fontFamily: "monospace" }}
-            >
-              ⌘K
-            </kbd>
+            <Search className="w-4 h-4 flex-shrink-0" style={{ color: colors.iconSecondary }} />
+            {!sidebarCollapsed && (
+              <>
+                <span className="flex-1 text-left text-[13px]">Search</span>
+                <kbd
+                  className="text-[11px] px-1.5 py-0.5 rounded"
+                  style={{ background: colors.bgHover, color: colors.textQuaternary, fontFamily: "monospace" }}
+                >
+                  ⌘K
+                </kbd>
+              </>
+            )}
           </button>
-          <SidebarItem icon={Settings} label="Settings" active={activeView === "settings"} onClick={() => setActiveView("settings")} />
+          <SidebarItem
+            icon={Settings}
+            label="Settings"
+            active={activeView === "settings"}
+            onClick={() => setActiveView("settings")}
+            collapsed={sidebarCollapsed}
+          />
         </div>
       </aside>
 
@@ -633,6 +740,8 @@ export default function HomePage() {
             </div>
           ) : activeView === "analytics" ? (
             <AnalyticsView workflows={workflows} archivedIds={archivedIds} />
+          ) : activeView === "simulation" ? (
+            <SimulationView />
           ) : activeView === "inbox" ? (
             <InboxView
               notifications={notifications}
@@ -692,19 +801,21 @@ export default function HomePage() {
   );
 }
 
-// ============ SIDEBAR ITEM (DESIGN.md lines 483-502) ============
+// ============ SIDEBAR ITEM (DESIGN.md lines 483-502) - Linear-style with collapse support ============
 function SidebarItem({
   icon: Icon,
   label,
   active,
   count,
   onClick,
+  collapsed = false,
 }: {
   icon: React.ElementType;
   label: string;
   active?: boolean;
   count?: number;
   onClick: () => void;
+  collapsed?: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
 
@@ -713,23 +824,37 @@ function SidebarItem({
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="w-full flex items-center rounded transition-all"
+      className={cn(
+        "w-full flex items-center rounded transition-all relative",
+        collapsed ? "justify-center" : ""
+      )}
       style={{
-        padding: "6px 8px",
-        gap: "8px",
+        padding: collapsed ? "6px" : "6px 8px",
+        gap: collapsed ? "0" : "8px",
         background: active ? colors.bgHover : hovered ? colors.bgSurface : "transparent",
         color: active ? colors.textPrimary : hovered ? colors.textSecondary : colors.textTertiary,
       }}
+      title={collapsed ? label : undefined}
     >
       <Icon
         className="w-4 h-4 flex-shrink-0"
         style={{ color: active ? colors.iconPrimary : colors.iconSecondary }}
       />
-      <span className="truncate flex-1 text-left text-[13px]">{label}</span>
-      {count !== undefined && (
-        <span className="text-[11px] tabular-nums" style={{ color: colors.textQuaternary }}>
-          {count}
-        </span>
+      {!collapsed && (
+        <>
+          <span className="truncate flex-1 text-left text-[13px]">{label}</span>
+          {count !== undefined && (
+            <span className="text-[11px] tabular-nums" style={{ color: colors.textQuaternary }}>
+              {count}
+            </span>
+          )}
+        </>
+      )}
+      {collapsed && count !== undefined && count > 0 && (
+        <span
+          className="absolute top-0 right-0 w-2 h-2 rounded-full"
+          style={{ background: colors.statusInfo }}
+        />
       )}
     </button>
   );
@@ -901,18 +1026,32 @@ function WorkflowRow({
 }) {
   const [hovered, setHovered] = useState(false);
 
+  const handleClick = (e: React.MouseEvent) => {
+    // Prevent double-firing and ensure click registers
+    e.preventDefault();
+    onClick();
+  };
+
   return (
     <div
-      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onClick={handleClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
       onContextMenu={onContextMenu}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="grid grid-cols-[1fr,80px,80px,28px] gap-4 px-4 py-2 cursor-pointer transition-colors group"
+      className="grid grid-cols-[1fr,80px,80px,28px] gap-4 px-4 py-2 cursor-pointer transition-colors group select-none"
       style={{
         background: isSelected ? colors.bgHover : hovered ? colors.bgSurface : "transparent",
       }}
     >
-      <div className="flex items-center gap-2.5 min-w-0">
+      <div className="flex items-center gap-2.5 min-w-0 pointer-events-none">
         {isStarred && (
           <Star
             className="w-3 h-3 flex-shrink-0"
@@ -930,12 +1069,12 @@ function WorkflowRow({
         </div>
       </div>
 
-      <div className="flex items-center">
+      <div className="flex items-center pointer-events-none">
         <StatusBadge status={workflow.status} />
       </div>
 
       <div
-        className="text-[11px] flex items-center tabular-nums"
+        className="text-[11px] flex items-center tabular-nums pointer-events-none"
         style={{ color: colors.textTertiary }}
       >
         {formatDate(workflow.updatedAt)}
@@ -945,9 +1084,10 @@ function WorkflowRow({
         <button
           onClick={(e) => {
             e.stopPropagation();
+            e.preventDefault();
             onContextMenu(e);
           }}
-          className="w-5 h-5 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity"
+          className="w-5 h-5 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-auto"
           style={{ color: colors.iconSecondary }}
           onMouseEnter={(e) => (e.currentTarget.style.background = colors.bgHover)}
           onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}

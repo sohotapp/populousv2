@@ -14,9 +14,68 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { runSimulation, SimulationConfig, SimulationResult } from "@/lib/simulation/engine";
+import {
+  createSimulationRun,
+  completeSimulationRun,
+  failSimulationRun,
+} from "@/lib/simulation/run-store";
+import {
+  validateSimulationRequest,
+  formatValidationErrors,
+  type SimulationRequest,
+} from "@/lib/simulation/validation";
+
+// Psychographic profile interfaces
+interface BigFiveProfile {
+  openness: number;
+  conscientiousness: number;
+  extraversion: number;
+  agreeableness: number;
+  neuroticism: number;
+}
+
+interface ValuesProfile {
+  selfDirection: number;
+  stimulation: number;
+  hedonism: number;
+  achievement: number;
+  power: number;
+  security: number;
+  conformity: number;
+  tradition: number;
+  benevolence: number;
+  universalism: number;
+}
+
+interface CognitiveBiasesProfile {
+  lossAversion: number;
+  statusQuoBias: number;
+  anchoringBias: number;
+  confirmationBias: number;
+  availabilityBias: number;
+  socialProof: number;
+  overconfidence: number;
+}
+
+interface BehavioralTraitsProfile {
+  riskTolerance: number;
+  priceElasticity: number;
+  brandLoyalty: number;
+  qualityOrientation: number;
+  timeDiscountRate: number;
+  authorityDeference: number;
+}
+
+interface PsychographicConfig {
+  bigFive?: Partial<BigFiveProfile>;
+  values?: Partial<ValuesProfile>;
+  biases?: Partial<CognitiveBiasesProfile>;
+  traits?: Partial<BehavioralTraitsProfile>;
+}
 
 // Request interface for the API
 interface SimulationAPIRequest {
+  id?: string;
   query: string;
 
   // Optional: structured question (if not provided, parsed from query)
@@ -44,12 +103,24 @@ interface SimulationAPIRequest {
       incomeMin?: number;
       incomeRange?: [number, number];
       region?: string[];
+      regions?: string[];
       industry?: string[];
+      industries?: string[];
       role?: string[];
+      roles?: string[];
       companySize?: string;
+      // Extended demographics
+      age?: string;
+      gender?: string;
+      education?: string;
+      income?: string;
+      location?: string;
     };
     archetypeMix?: string;
   };
+
+  // Psychographic configuration (NEW)
+  psychographics?: PsychographicConfig;
 
   // Execution settings
   execution?: {
@@ -80,7 +151,7 @@ interface SimulationAPIRequest {
  * Parse a natural language query into simulation config
  */
 function parseQuery(request: SimulationAPIRequest): SimulationConfig {
-  const { query, question, questionType, options, world, population, execution, counterfactuals } = request;
+  const { query, question, questionType, options, world, population, execution, counterfactuals, psychographics } = request;
 
   // Determine question type from query if not specified
   let inferredQuestionType = questionType || "binary";
@@ -125,15 +196,18 @@ function parseQuery(request: SimulationAPIRequest): SimulationConfig {
       // Convert age range to buckets
       populationConfig.filters.ageRange = getAgeBuckets(d.ageRange[0], d.ageRange[1]);
     }
-    if (d.region) {
-      const mappedRegions = mapRegionFilters(d.region);
+    const regionValues = d.region || d.regions;
+    if (regionValues) {
+      const mappedRegions = mapRegionFilters(regionValues);
       if (mappedRegions?.length) populationConfig.filters.region = mappedRegions;
     }
-    if (d.industry) {
-      populationConfig.filters.industry = d.industry;
+    const industryValues = d.industry || d.industries;
+    if (industryValues) {
+      populationConfig.filters.industry = industryValues;
     }
-    if (d.role) {
-      populationConfig.filters.role = d.role;
+    const roleValues = d.role || d.roles;
+    if (roleValues) {
+      populationConfig.filters.role = roleValues;
     }
     if (d.incomeRange) {
       populationConfig.filters.income = getIncomeBuckets(d.incomeRange[0], d.incomeRange[1]);
@@ -173,6 +247,7 @@ function parseQuery(request: SimulationAPIRequest): SimulationConfig {
     : undefined;
 
   return {
+    id: request.id,
     query,
     scenario,
     question: inferredQuestion,
@@ -186,6 +261,14 @@ function parseQuery(request: SimulationAPIRequest): SimulationConfig {
     } : undefined,
 
     population: populationConfig,
+
+    // Pass psychographic configuration for population sampling
+    psychographics: psychographics ? {
+      bigFive: psychographics.bigFive,
+      values: psychographics.values,
+      biases: psychographics.biases,
+      traits: psychographics.traits,
+    } : undefined,
 
     execution: {
       pilotMode: execution?.pilotMode ?? false,
@@ -250,15 +333,48 @@ function normalizeBias(value?: number): number {
  * POST handler - run simulation
  */
 export async function POST(request: NextRequest) {
-  try {
-    const body: SimulationAPIRequest = await request.json();
+  let runRecordId: string | null = null;
+  let auditId: string | null = null;
+  let usedFallback = false;
 
-    if (!body.query?.trim()) {
-      return NextResponse.json({ error: "Query is required" }, { status: 400 });
+  try {
+    // Parse request body
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid JSON in request body", details: "Request body must be valid JSON" },
+        { status: 400 }
+      );
     }
 
+    // Validate request with Zod schema
+    const validation = validateSimulationRequest(body);
+    if (!validation.success) {
+      return NextResponse.json(
+        formatValidationErrors(validation.errors!),
+        { status: 400 }
+      );
+    }
+
+    const validatedBody = validation.data as SimulationRequest;
+
     // Parse query into simulation config
-    const config = parseQuery(body);
+    const config = parseQuery(validatedBody as SimulationAPIRequest);
+
+    // Create audit/run record before execution (now async for DB persistence)
+    const runRecord = await createSimulationRun(
+      { ...config, id: config.id },
+      {
+        ip: request.headers.get("x-forwarded-for") || undefined,
+        userAgent: request.headers.get("user-agent") || undefined,
+      }
+    );
+
+    config.id = runRecord.id;
+    runRecordId = runRecord.id;
+    auditId = runRecord.auditId;
 
     // Run the simulation
     const startTime = Date.now();
@@ -270,23 +386,56 @@ export async function POST(request: NextRequest) {
         console.log(`[Simulation] ${progress.phase}: ${progress.message} (${Math.round(progress.progress * 100)}%)`);
       });
     } catch (simError) {
-      console.error("Simulation execution error:", simError);
+      // Categorize the error for proper logging and UI feedback
+      const errorInfo = categorizeSimulationError(simError);
+      usedFallback = true;
 
-      // Fall back to simplified simulation for demo purposes
+      console.error(`[Simulation] ❌ Multi-agent engine failed`);
+      console.error(`[Simulation] Category: ${errorInfo.category}`);
+      console.error(`[Simulation] Message: ${errorInfo.message}`);
+      console.error(`[Simulation] Retryable: ${errorInfo.retryable}`);
+      if (errorInfo.retryAfterMs) {
+        console.error(`[Simulation] Retry after: ${errorInfo.retryAfterMs}ms`);
+      }
+
+      // Fall back to simplified simulation
       result = await runFallbackSimulation(config);
+      
+      // Add fallback metadata to result
+      (result as SimulationResult & { _fallbackInfo?: unknown })._fallbackInfo = {
+        reason: errorInfo.category,
+        message: errorInfo.message,
+        retryable: errorInfo.retryable,
+        retryAfterMs: errorInfo.retryAfterMs,
+      };
     }
 
     const executionTime = Date.now() - startTime;
-    console.log(`[Simulation] Completed in ${executionTime}ms`);
+    console.log(`[Simulation] Completed in ${executionTime}ms${usedFallback ? " (fallback mode)" : ""}`);
 
-    return NextResponse.json(result);
+    // Persist run + audit summary (now async for DB persistence)
+    await completeSimulationRun(runRecord.id, { ...result, auditId: runRecord.auditId });
+
+    return NextResponse.json({ 
+      ...result, 
+      auditId: runRecord.auditId,
+      _meta: {
+        usedFallback,
+        executionTimeMs: executionTime,
+      }
+    });
 
   } catch (error) {
     console.error("Simulation API error:", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    if (runRecordId) {
+      await failSimulationRun(runRecordId, message);
+    }
     return NextResponse.json(
       {
         error: "Simulation failed",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: message,
+        auditId,
       },
       { status: 500 }
     );
@@ -294,8 +443,65 @@ export async function POST(request: NextRequest) {
 }
 
 /**
+ * Categorize simulation errors for logging and UI feedback
+ */
+function categorizeSimulationError(error: unknown): {
+  category: "api_key" | "rate_limit" | "timeout" | "model_error" | "unknown";
+  message: string;
+  retryable: boolean;
+  retryAfterMs?: number;
+} {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  const errorLower = errorMessage.toLowerCase();
+
+  if (errorLower.includes("api key") || errorLower.includes("authentication") || errorLower.includes("unauthorized")) {
+    return {
+      category: "api_key",
+      message: "Invalid or missing Anthropic API key. Check ANTHROPIC_API_KEY environment variable.",
+      retryable: false,
+    };
+  }
+
+  if (errorLower.includes("rate limit") || errorLower.includes("429") || errorLower.includes("too many requests")) {
+    return {
+      category: "rate_limit",
+      message: "Rate limit exceeded. The simulation will retry with reduced concurrency.",
+      retryable: true,
+      retryAfterMs: 60000, // 1 minute
+    };
+  }
+
+  if (errorLower.includes("timeout") || errorLower.includes("timed out") || errorLower.includes("econnreset")) {
+    return {
+      category: "timeout",
+      message: "Request timed out. Consider reducing sample size or using archetype compression.",
+      retryable: true,
+      retryAfterMs: 5000,
+    };
+  }
+
+  if (errorLower.includes("model") || errorLower.includes("overloaded") || errorLower.includes("capacity")) {
+    return {
+      category: "model_error",
+      message: "Model temporarily unavailable. Falling back to simpler analysis.",
+      retryable: true,
+      retryAfterMs: 30000,
+    };
+  }
+
+  return {
+    category: "unknown",
+    message: errorMessage,
+    retryable: false,
+  };
+}
+
+/**
  * Fallback simulation for when the full engine isn't available
  * (e.g., missing API keys, rate limits, etc.)
+ * 
+ * NOTE: This is a single-LLM fallback, not true multi-agent simulation.
+ * Results will have lower accuracy scores to indicate this.
  */
 async function runFallbackSimulation(config: SimulationConfig): Promise<SimulationResult> {
   const simulationId = `sim-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -304,6 +510,9 @@ async function runFallbackSimulation(config: SimulationConfig): Promise<Simulati
   // Use Anthropic for a single analysis call
   const Anthropic = (await import("@anthropic-ai/sdk")).default;
   const anthropic = new Anthropic();
+  
+  console.warn(`[Simulation] ⚠️ Running in FALLBACK MODE for simulation ${simulationId}`);
+  console.warn(`[Simulation] Fallback uses single-LLM analysis instead of ${sampleSize} independent agents`);
 
   const systemPrompt = `You are an expert behavioral simulation analyst. Given a query about how people or groups will respond to a scenario, analyze it and provide calibrated predictions based on behavioral science, game theory, and psychological research.
 

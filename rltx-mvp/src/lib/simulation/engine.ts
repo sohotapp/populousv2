@@ -17,7 +17,7 @@
  * - Statistical aggregation with Wilson score confidence intervals
  */
 
-import { samplePopulation, AgentProfile, SamplingOptions } from "../population/sampler";
+import { samplePopulation, AgentProfile, SamplingOptions, PsychographicConfig } from "../population/sampler";
 import { compilePrompt, ScenarioContext, CompiledPrompt } from "../agents/prompt-compiler";
 import { executeBatch, BatchRequest, BatchResult, BatchProgress } from "../agents/parallel-batch";
 import { routeModel, RoutingResult } from "../agents/model-router";
@@ -30,6 +30,8 @@ import { createGenericAnchors } from "../calibration/anchors/generic";
 // =============================================================================
 
 export interface SimulationConfig {
+  /** Optional run identifier for auditability */
+  id?: string;
   // Query and scenario
   query: string;
   scenario: string;
@@ -66,6 +68,9 @@ export interface SimulationConfig {
     vipIds?: string[];
   };
 
+  // Psychographic configuration for agent personality/values
+  psychographics?: PsychographicConfig;
+
   // Agent behavior configuration
   agents?: {
     biases?: {
@@ -98,6 +103,8 @@ export interface SimulationResult {
   id: string;
   query: string;
   timestamp: string;
+  /** Optional audit trail identifier */
+  auditId?: string;
 
   // Summary metrics
   summary: {
@@ -189,7 +196,7 @@ export class SimulationEngine {
     onProgress?: (progress: SimulationProgress) => void
   ): Promise<SimulationResult> {
     const startTime = Date.now();
-    const simulationId = `sim-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const simulationId = config.id || `sim-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
     // Phase 1: Sample population
     onProgress?.({
@@ -403,6 +410,13 @@ export class SimulationEngine {
       };
     }
 
+    // Pass psychographic configuration for personality/values/biases
+    if (config.psychographics) {
+      options.psychographics = config.psychographics;
+      // Default variance of 0.15 allows ~30% spread around center values
+      options.psychographicVariance = 0.15;
+    }
+
     return samplePopulation(options);
   }
 
@@ -573,12 +587,21 @@ export class SimulationEngine {
       return sum + value * r.weight;
     }, 0) / calibratedResults.reduce((sum, r) => sum + r.weight, 0);
 
-    // Define segment dimensions
+    // Define segment dimensions (demographics)
     const dimensions = [
       { key: "age", values: ["18-24", "25-34", "35-44", "45-54", "55-64", "65+"] },
       { key: "income", values: ["<25k", "25-50k", "50-75k", "75-100k", "100-150k", ">150k"] },
       { key: "education", values: ["high_school", "some_college", "bachelors", "graduate"] },
       { key: "region", values: ["northeast", "midwest", "south", "west"] }
+    ];
+
+    // Define psychographic segments (Big Five personality)
+    const psychographicDimensions = [
+      { key: "openness", label: "Openness", thresholds: [{ label: "Low", max: 0.4 }, { label: "High", min: 0.6 }] },
+      { key: "conscientiousness", label: "Conscientiousness", thresholds: [{ label: "Low", max: 0.4 }, { label: "High", min: 0.6 }] },
+      { key: "extraversion", label: "Extraversion", thresholds: [{ label: "Introverted", max: 0.4 }, { label: "Extraverted", min: 0.6 }] },
+      { key: "neuroticism", label: "Neuroticism", thresholds: [{ label: "Stable", max: 0.4 }, { label: "Anxious", min: 0.6 }] },
+      { key: "riskTolerance", label: "Risk Profile", thresholds: [{ label: "Risk-Averse", max: 0.35 }, { label: "Risk-Tolerant", min: 0.65 }] },
     ];
 
     // Analyze each dimension
@@ -619,6 +642,58 @@ export class SimulationEngine {
       }
     }
 
+    // Analyze psychographic dimensions (Big Five, behavioral traits)
+    for (const dim of psychographicDimensions) {
+      for (const threshold of dim.thresholds) {
+        // Filter results for this psychographic segment
+        const segmentResults = calibratedResults.filter(r => {
+          const agent = agentMap.get(r.agentId);
+          if (!agent?.psychographics) return false;
+
+          // Get the value from bigFive or traits
+          let traitValue: number | undefined;
+          if (dim.key in (agent.psychographics.bigFive || {})) {
+            traitValue = agent.psychographics.bigFive?.[dim.key as keyof typeof agent.psychographics.bigFive];
+          } else if (dim.key in (agent.psychographics.traits || {})) {
+            traitValue = agent.psychographics.traits?.[dim.key as keyof typeof agent.psychographics.traits];
+          }
+
+          if (traitValue === undefined) return false;
+
+          // Check threshold
+          if (threshold.max !== undefined && traitValue > threshold.max) return false;
+          if (threshold.min !== undefined && traitValue < threshold.min) return false;
+          return true;
+        });
+
+        if (segmentResults.length < 10) continue;
+
+        // Calculate segment average
+        const totalWeight = segmentResults.reduce((sum, r) => sum + r.weight, 0);
+        const segmentAvg = segmentResults.reduce((sum, r) => {
+          const val = r.ssrResult.pmf.yes ?? r.ssrResult.pmf.high ?? 0.5;
+          return sum + val * r.weight;
+        }, 0) / totalWeight;
+
+        const delta = Math.round((segmentAvg - overallAvg) * 100);
+
+        // Calculate statistical significance
+        const n = segmentResults.length;
+        const se = Math.sqrt((segmentAvg * (1 - segmentAvg)) / n);
+        const z = Math.abs(segmentAvg - overallAvg) / se;
+        const significance = z > 1.96;
+
+        segments.push({
+          name: `${dim.label}: ${threshold.label}`,
+          filters: { [dim.key]: threshold.label },
+          value: segmentAvg,
+          count: n,
+          delta,
+          significance
+        });
+      }
+    }
+
     // Sort by absolute delta
     return segments.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
   }
@@ -636,16 +711,112 @@ export class SimulationEngine {
     // Create lookup
     const agentMap = new Map(agents.map(a => [a.id, a]));
 
-    // Calculate correlation between each trait and outcome
-    const traits = ["riskTolerance", "priceSensitivity", "brandLoyalty", "techAdoption"];
-    const traitLabels: Record<string, string> = {
-      riskTolerance: "Risk Tolerance",
-      priceSensitivity: "Price Sensitivity",
-      brandLoyalty: "Brand Loyalty",
-      techAdoption: "Tech Adoption"
+    // Helper to analyze a numeric factor
+    const analyzeFactor = (
+      name: string,
+      getValue: (agent: AgentProfile) => number | undefined
+    ) => {
+      const pairs: Array<[number, number]> = [];
+
+      for (const result of calibratedResults) {
+        const agent = agentMap.get(result.agentId);
+        if (!agent) continue;
+
+        const value = getValue(agent);
+        if (value === undefined) continue;
+
+        const outcome = result.ssrResult.pmf.yes ?? result.ssrResult.pmf.high ?? 0.5;
+        pairs.push([value, outcome]);
+      }
+
+      if (pairs.length < 20) return;
+
+      const correlation = this.calculateCorrelation(pairs);
+
+      if (Math.abs(correlation) > 0.1) {
+        drivers.push({
+          factor: name,
+          importance: Math.abs(correlation),
+          direction: correlation > 0 ? "positive" : "negative",
+          effect: correlation
+        });
+      }
     };
 
-    for (const trait of traits) {
+    // ==========================================================================
+    // Big Five Personality Traits (highest predictive power)
+    // ==========================================================================
+    const bigFiveLabels: Record<string, string> = {
+      openness: "Openness (Big Five)",
+      conscientiousness: "Conscientiousness (Big Five)",
+      extraversion: "Extraversion (Big Five)",
+      agreeableness: "Agreeableness (Big Five)",
+      neuroticism: "Neuroticism (Big Five)"
+    };
+
+    for (const [trait, label] of Object.entries(bigFiveLabels)) {
+      analyzeFactor(label, (agent) => agent.psychographics?.bigFive?.[trait as keyof typeof agent.psychographics.bigFive]);
+    }
+
+    // ==========================================================================
+    // Schwartz Values (top drivers)
+    // ==========================================================================
+    const valuesLabels: Record<string, string> = {
+      achievement: "Achievement (Values)",
+      security: "Security (Values)",
+      selfDirection: "Self-Direction (Values)",
+      power: "Power (Values)",
+      benevolence: "Benevolence (Values)",
+      tradition: "Tradition (Values)"
+    };
+
+    for (const [value, label] of Object.entries(valuesLabels)) {
+      analyzeFactor(label, (agent) => agent.psychographics?.values?.[value as keyof typeof agent.psychographics.values]);
+    }
+
+    // ==========================================================================
+    // Cognitive Biases
+    // ==========================================================================
+    const biasLabels: Record<string, string> = {
+      lossAversion: "Loss Aversion",
+      statusQuoBias: "Status Quo Bias",
+      socialProof: "Social Proof Susceptibility",
+      overconfidence: "Overconfidence"
+    };
+
+    for (const [bias, label] of Object.entries(biasLabels)) {
+      analyzeFactor(label, (agent) => agent.psychographics?.biases?.[bias as keyof typeof agent.psychographics.biases]);
+    }
+
+    // ==========================================================================
+    // Behavioral Traits
+    // ==========================================================================
+    const behavioralLabels: Record<string, string> = {
+      riskTolerance: "Risk Tolerance",
+      priceElasticity: "Price Sensitivity",
+      brandLoyalty: "Brand Loyalty",
+      qualityOrientation: "Quality Orientation"
+    };
+
+    for (const [trait, label] of Object.entries(behavioralLabels)) {
+      analyzeFactor(label, (agent) => agent.psychographics?.traits?.[trait as keyof typeof agent.psychographics.traits]);
+    }
+
+    // ==========================================================================
+    // Legacy traits (backwards compatibility)
+    // ==========================================================================
+    const legacyTraits = ["riskTolerance", "priceSensitivity", "brandLoyalty", "techAdoption"];
+    const legacyLabels: Record<string, string> = {
+      riskTolerance: "Risk Tolerance (Legacy)",
+      priceSensitivity: "Price Sensitivity (Legacy)",
+      brandLoyalty: "Brand Loyalty (Legacy)",
+      techAdoption: "Tech Adoption (Legacy)"
+    };
+
+    for (const trait of legacyTraits) {
+      // Skip if we already have psychographic version
+      if (drivers.some(d => d.factor.includes(legacyLabels[trait]?.split(" (")[0] || ""))) continue;
+
       const pairs: Array<[number, number]> = [];
 
       for (const result of calibratedResults) {
@@ -664,12 +835,11 @@ export class SimulationEngine {
 
       if (pairs.length < 20) continue;
 
-      // Calculate Pearson correlation
       const correlation = this.calculateCorrelation(pairs);
 
-      if (Math.abs(correlation) > 0.1) {  // Meaningful correlation
+      if (Math.abs(correlation) > 0.1) {
         drivers.push({
-          factor: traitLabels[trait] || trait,
+          factor: legacyLabels[trait] || trait,
           importance: Math.abs(correlation),
           direction: correlation > 0 ? "positive" : "negative",
           effect: correlation
@@ -677,7 +847,9 @@ export class SimulationEngine {
       }
     }
 
-    // Add demographic drivers
+    // ==========================================================================
+    // Demographics
+    // ==========================================================================
     const demographics = ["age", "income", "education"];
     const demoLabels: Record<string, string> = {
       age: "Age",
@@ -695,7 +867,6 @@ export class SimulationEngine {
         const demoValue = agent.demographics[demo as keyof typeof agent.demographics];
         if (!demoValue) continue;
 
-        // Convert to ordinal (simplified)
         const demoNumeric = this.demographicToNumeric(demo, demoValue);
         const outcome = result.ssrResult.pmf.yes ?? result.ssrResult.pmf.high ?? 0.5;
 
